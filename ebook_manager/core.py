@@ -6,7 +6,6 @@ Contains the fundamental functions for file detection, grouping, and filtering.
 
 import os
 import re
-from pathlib import Path
 
 # Default ebook file extensions
 EBOOK_EXTENSIONS = ['.epub', '.pdf', '.mobi', '.lrf', '.azw', '.azw3']

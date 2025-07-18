@@ -6,10 +6,29 @@ import subprocess
 from unittest.mock import patch, MagicMock, call
 from pathlib import Path
 
-# Add the parent directory to the path so we can import ebook_manager
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
+# Import the ebook_manager package
 import ebook_manager
+from ebook_manager.core import (
+    is_ebook_file,
+    find_ebooks,
+    extract_book_identifier,
+    filter_onefile_per_book,
+    parse_extensions,
+    FORMAT_PRIORITY,
+    EBOOK_EXTENSIONS,
+)
+# Import functions from __main__ module
+from ebook_manager.__main__ import (
+    process_ebook_with_beets,
+    import_ebook_to_beets,
+    scan_collection,
+    import_collection,
+    batch_import_ebooks,
+    test_organization,
+    suggest_organization,
+    import_single_directory,
+    BEETS_EXE,
+)
 
 
 class TestEbookManager(unittest.TestCase):
@@ -34,7 +53,7 @@ class TestEbookManager(unittest.TestCase):
         
         for book in test_books:
             file_path = os.path.join(self.test_dir, book)
-            with open(file_path, 'w') as f:
+            with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(f"Test content for {book}")
             self.test_files.append(file_path)
     
@@ -61,30 +80,30 @@ class TestEbookManager(unittest.TestCase):
         
         for filename, expected in test_cases:
             with self.subTest(filename=filename):
-                result = ebook_manager.is_ebook_file(filename)
+                result = is_ebook_file(filename)
                 self.assertEqual(result, expected, f"Failed for {filename}")
     
     def test_is_ebook_file_with_allowed_extensions(self):
         """Test ebook file detection with custom allowed extensions."""
         # Test with only EPUB allowed
         epub_only = ['.epub']
-        self.assertTrue(ebook_manager.is_ebook_file('book.epub', epub_only))
-        self.assertFalse(ebook_manager.is_ebook_file('book.pdf', epub_only))
-        self.assertFalse(ebook_manager.is_ebook_file('book.mobi', epub_only))
+        self.assertTrue(is_ebook_file('book.epub', epub_only))
+        self.assertFalse(is_ebook_file('book.pdf', epub_only))
+        self.assertFalse(is_ebook_file('book.mobi', epub_only))
         
         # Test with EPUB and PDF allowed
         epub_pdf = ['.epub', '.pdf']
-        self.assertTrue(ebook_manager.is_ebook_file('book.epub', epub_pdf))
-        self.assertTrue(ebook_manager.is_ebook_file('book.pdf', epub_pdf))
-        self.assertFalse(ebook_manager.is_ebook_file('book.mobi', epub_pdf))
+        self.assertTrue(is_ebook_file('book.epub', epub_pdf))
+        self.assertTrue(is_ebook_file('book.pdf', epub_pdf))
+        self.assertFalse(is_ebook_file('book.mobi', epub_pdf))
         
         # Test case insensitivity
-        self.assertTrue(ebook_manager.is_ebook_file('BOOK.EPUB', epub_only))
-        self.assertTrue(ebook_manager.is_ebook_file('Book.Epub', epub_only))
+        self.assertTrue(is_ebook_file('BOOK.EPUB', epub_only))
+        self.assertTrue(is_ebook_file('Book.Epub', epub_only))
     
     def test_find_ebooks_all_types(self):
         """Test finding all ebook types in directory."""
-        ebooks = ebook_manager.find_ebooks(self.test_dir)
+        ebooks = find_ebooks(self.test_dir)
         
         # Should find 6 ebook files (excluding .txt and .mp3)
         self.assertEqual(len(ebooks), 6)
@@ -110,58 +129,58 @@ class TestEbookManager(unittest.TestCase):
     def test_find_ebooks_with_filtering(self):
         """Test finding ebooks with extension filtering."""
         # Test EPUB only
-        epub_files = ebook_manager.find_ebooks(self.test_dir, ['.epub'])
+        epub_files = find_ebooks(self.test_dir, ['.epub'])
         self.assertEqual(len(epub_files), 1)
         self.assertTrue(epub_files[0].endswith('.epub'))
         
         # Test PDF only
-        pdf_files = ebook_manager.find_ebooks(self.test_dir, ['.pdf'])
+        pdf_files = find_ebooks(self.test_dir, ['.pdf'])
         self.assertEqual(len(pdf_files), 1)
         self.assertTrue(pdf_files[0].endswith('.pdf'))
         
         # Test EPUB and PDF
-        epub_pdf_files = ebook_manager.find_ebooks(self.test_dir, ['.epub', '.pdf'])
+        epub_pdf_files = find_ebooks(self.test_dir, ['.epub', '.pdf'])
         self.assertEqual(len(epub_pdf_files), 2)
         extensions = [os.path.splitext(f)[1].lower() for f in epub_pdf_files]
         self.assertIn('.epub', extensions)
         self.assertIn('.pdf', extensions)
         
         # Test with non-existent extension
-        no_files = ebook_manager.find_ebooks(self.test_dir, ['.xyz'])
+        no_files = find_ebooks(self.test_dir, ['.xyz'])
         self.assertEqual(len(no_files), 0)
     
     def test_parse_extensions(self):
         """Test extension parsing functionality."""
         # Test None input
-        result = ebook_manager.parse_extensions(None)
+        result = parse_extensions(None)
         self.assertIsNone(result)
         
         # Test empty string
-        result = ebook_manager.parse_extensions('')
+        result = parse_extensions('')
         self.assertIsNone(result)
         
         # Test single extension with dot
-        result = ebook_manager.parse_extensions('.epub')
+        result = parse_extensions('.epub')
         self.assertEqual(result, ['.epub'])
         
         # Test single extension without dot
-        result = ebook_manager.parse_extensions('epub')
+        result = parse_extensions('epub')
         self.assertEqual(result, ['.epub'])
         
         # Test multiple extensions with dots
-        result = ebook_manager.parse_extensions('.epub,.pdf,.mobi')
+        result = parse_extensions('.epub,.pdf,.mobi')
         self.assertEqual(result, ['.epub', '.pdf', '.mobi'])
         
         # Test multiple extensions without dots
-        result = ebook_manager.parse_extensions('epub,pdf,mobi')
+        result = parse_extensions('epub,pdf,mobi')
         self.assertEqual(result, ['.epub', '.pdf', '.mobi'])
         
         # Test mixed case
-        result = ebook_manager.parse_extensions('.EPUB,.PDF')
+        result = parse_extensions('.EPUB,.PDF')
         self.assertEqual(result, ['.epub', '.pdf'])
         
         # Test with spaces
-        result = ebook_manager.parse_extensions(' .epub , .pdf , .mobi ')
+        result = parse_extensions(' .epub , .pdf , .mobi ')
         self.assertEqual(result, ['.epub', '.pdf', '.mobi'])
     
     @patch('subprocess.run')
@@ -173,11 +192,11 @@ class TestEbookManager(unittest.TestCase):
         mock_result.returncode = 0
         mock_run.return_value = mock_result
         
-        result = ebook_manager.process_ebook_with_beets('test.epub')
+        result = process_ebook_with_beets('test.epub')
         
         self.assertEqual(result, "Processing successful")
         mock_run.assert_called_once_with(
-            [ebook_manager.BEETS_EXE, 'ebook', 'test.epub'],
+            [BEETS_EXE, 'ebook', 'test.epub'],
             capture_output=True,
             text=True,
             check=True
@@ -190,7 +209,7 @@ class TestEbookManager(unittest.TestCase):
         mock_run.side_effect = subprocess.CalledProcessError(1, 'beet')
         
         with patch('builtins.print') as mock_print:
-            result = ebook_manager.process_ebook_with_beets('test.epub')
+            result = process_ebook_with_beets('test.epub')
         
         self.assertIsNone(result)
         mock_print.assert_called()
@@ -204,28 +223,28 @@ class TestEbookManager(unittest.TestCase):
         mock_result.returncode = 0
         mock_run.return_value = mock_result
         
-        result = ebook_manager.import_ebook_to_beets('test.epub')
+        result = import_ebook_to_beets('test.epub')
         
         self.assertEqual(result, "Successfully imported ebook")
         # Should use absolute path
         expected_path = os.path.abspath('test.epub')
         mock_run.assert_called_once_with(
-            [ebook_manager.BEETS_EXE, 'import-ebooks', expected_path],
+            [BEETS_EXE, 'import-ebooks', expected_path],
             capture_output=True,
             text=True,
             check=True
         )
     
-    @patch('ebook_manager.find_ebooks')
+    @patch('ebook_manager.__main__.find_ebooks')
     @patch('builtins.print')
     def test_scan_collection_with_filtering(self, mock_print, mock_find):
         """Test collection scanning with extension filtering."""
         # Mock finding 2 EPUB files
         mock_find.return_value = ['book1.epub', 'book2.epub']
         
-        with patch('ebook_manager.process_ebook_with_beets') as mock_process:
+        with patch('ebook_manager.__main__.process_ebook_with_beets') as mock_process:
             mock_process.return_value = "Processed successfully"
-            ebook_manager.scan_collection(self.test_dir, ['.epub'])
+            scan_collection(self.test_dir, ['.epub'])
         
         # Check that find_ebooks was called with filtering
         mock_find.assert_called_once_with(self.test_dir, ['.epub'])
@@ -234,7 +253,7 @@ class TestEbookManager(unittest.TestCase):
         print_calls = [call.args[0] for call in mock_print.call_args_list]
         self.assertTrue(any('Filtering by extensions: [' in call for call in print_calls))
     
-    @patch('ebook_manager.find_ebooks')
+    @patch('ebook_manager.__main__.find_ebooks')
     @patch('builtins.input')
     @patch('builtins.print')
     def test_import_collection_with_filtering(self, mock_print, mock_input, mock_find):
@@ -243,9 +262,9 @@ class TestEbookManager(unittest.TestCase):
         mock_input.return_value = 'y'
         mock_find.return_value = ['book1.epub', 'book2.epub']
         
-        with patch('ebook_manager.import_ebook_to_beets') as mock_import:
+        with patch('ebook_manager.__main__.import_ebook_to_beets') as mock_import:
             mock_import.return_value = "Successfully imported ebook"
-            ebook_manager.import_collection(self.test_dir, ['.epub'])
+            import_collection(self.test_dir, ['.epub'])
         
         # Check that find_ebooks was called with filtering
         mock_find.assert_called_once_with(self.test_dir, ['.epub'])
@@ -253,7 +272,7 @@ class TestEbookManager(unittest.TestCase):
         # Check that import was called for each file
         self.assertEqual(mock_import.call_count, 2)
     
-    @patch('ebook_manager.find_ebooks')
+    @patch('ebook_manager.__main__.find_ebooks')
     @patch('builtins.input')
     @patch('subprocess.run')
     def test_batch_import_with_filtering(self, mock_run, mock_input, mock_find):
@@ -268,7 +287,7 @@ class TestEbookManager(unittest.TestCase):
         mock_run.return_value = mock_result
         
         with patch('builtins.print'):
-            ebook_manager.batch_import_ebooks(self.test_dir, ['.epub'])
+            batch_import_ebooks(self.test_dir, ['.epub'])
         
         # When filtering, should use individual imports (2 calls)
         self.assertEqual(mock_run.call_count, 2)
@@ -279,7 +298,7 @@ class TestEbookManager(unittest.TestCase):
             self.assertEqual(args[1], 'import-ebooks')
             self.assertTrue(args[2].endswith('.epub'))
     
-    @patch('ebook_manager.find_ebooks')
+    @patch('ebook_manager.__main__.find_ebooks')
     @patch('builtins.input')
     @patch('subprocess.run')
     def test_batch_import_without_filtering(self, mock_run, mock_input, mock_find):
@@ -294,7 +313,7 @@ class TestEbookManager(unittest.TestCase):
         mock_run.return_value = mock_result
         
         with patch('builtins.print'):
-            ebook_manager.batch_import_ebooks(self.test_dir, None)
+            batch_import_ebooks(self.test_dir, None)
         
         # When not filtering, should use directory import (1 call)
         self.assertEqual(mock_run.call_count, 1)
@@ -309,17 +328,17 @@ class TestEbookManager(unittest.TestCase):
         # Test that all functions correctly use extension filtering
         
         # Test with EPUB only
-        epub_files = ebook_manager.find_ebooks(self.test_dir, ['.epub'])
+        epub_files = find_ebooks(self.test_dir, ['.epub'])
         self.assertEqual(len(epub_files), 1)
         self.assertTrue(all(f.endswith('.epub') for f in epub_files))
         
         # Test with multiple extensions
-        multi_files = ebook_manager.find_ebooks(self.test_dir, ['.epub', '.pdf', '.mobi'])
+        multi_files = find_ebooks(self.test_dir, ['.epub', '.pdf', '.mobi'])
         self.assertEqual(len(multi_files), 3)
         
         # Test that filtering affects different functions consistently
         for allowed_ext in [['.epub'], ['.pdf'], ['.epub', '.pdf']]:
-            files_found = ebook_manager.find_ebooks(self.test_dir, allowed_ext)
+            files_found = find_ebooks(self.test_dir, allowed_ext)
             
             # All found files should match the allowed extensions
             for file_path in files_found:
@@ -346,14 +365,14 @@ class TestEbookManager(unittest.TestCase):
                 mixed_files.append(file_path)
             
             # Test that lowercase filter matches uppercase files
-            epub_files = ebook_manager.find_ebooks(mixed_case_dir, ['.epub'])
+            epub_files = find_ebooks(mixed_case_dir, ['.epub'])
             self.assertEqual(len(epub_files), 1)
             self.assertTrue(epub_files[0].endswith('.EPUB'))
             
             # Test that mixed case filters work (input gets normalized)
             # Using mixed case input that gets normalized to lowercase
-            mixed_case_extensions = ebook_manager.parse_extensions('.EPUB,.Pdf,.MoBi')
-            all_files = ebook_manager.find_ebooks(mixed_case_dir, mixed_case_extensions)
+            mixed_case_extensions = parse_extensions('.EPUB,.Pdf,.MoBi')
+            all_files = find_ebooks(mixed_case_dir, mixed_case_extensions)
             self.assertEqual(len(all_files), 3)
             
         finally:
@@ -378,7 +397,7 @@ class TestEbookManager(unittest.TestCase):
         
         for filepath, expected in test_cases:
             with self.subTest(filepath=filepath):
-                result = ebook_manager.extract_book_identifier(filepath)
+                result = extract_book_identifier(filepath)
                 self.assertEqual(result, expected)
     
     def test_filter_onefile_per_book(self):
@@ -403,7 +422,7 @@ class TestEbookManager(unittest.TestCase):
                 file_paths.append(filepath)
             
             # Test filtering
-            filtered = ebook_manager.filter_onefile_per_book(file_paths)
+            filtered = filter_onefile_per_book(file_paths)
             
             # Should keep only highest priority format per book
             filtered_names = [os.path.basename(f) for f in filtered]
@@ -434,8 +453,8 @@ class TestEbookManager(unittest.TestCase):
         for i, format1 in enumerate(formats_by_priority):
             for j, format2 in enumerate(formats_by_priority):
                 if i < j:  # format1 should have higher priority than format2
-                    priority1 = ebook_manager.FORMAT_PRIORITY.get(format1, 0)
-                    priority2 = ebook_manager.FORMAT_PRIORITY.get(format2, 0)
+                    priority1 = FORMAT_PRIORITY.get(format1, 0)
+                    priority2 = FORMAT_PRIORITY.get(format2, 0)
                     self.assertGreater(priority1, priority2, 
                         f"{format1} should have higher priority than {format2}")
 
@@ -473,7 +492,7 @@ class TestEbookManagerCLI(unittest.TestCase):
         self.assertTrue(any('--ext' in call for call in print_calls))
     
     @patch('argparse.ArgumentParser.parse_args')
-    @patch('ebook_manager.scan_collection')
+    @patch('ebook_manager.__main__.scan_collection')
     def test_main_scan_command(self, mock_scan, mock_parse_args):
         """Test main function with scan command."""
         # Mock command line arguments
@@ -491,7 +510,7 @@ class TestEbookManagerCLI(unittest.TestCase):
         mock_scan.assert_called_once_with(self.test_dir, ['.epub'], False)
     
     @patch('argparse.ArgumentParser.parse_args')
-    @patch('ebook_manager.import_collection')
+    @patch('ebook_manager.__main__.import_collection')
     def test_main_import_command_with_multiple_extensions(self, mock_import, mock_parse_args):
         """Test main function with import command and multiple extensions."""
         # Mock command line arguments
@@ -526,7 +545,7 @@ class TestEbookManagerCLI(unittest.TestCase):
         self.assertTrue(any('Directory not found' in call for call in print_calls))
     
     @patch('argparse.ArgumentParser.parse_args')
-    @patch('ebook_manager.scan_collection')  
+    @patch('ebook_manager.__main__.scan_collection')  
     def test_main_scan_command_with_onefile(self, mock_scan, mock_parse_args):
         """Test main function with scan command and --onefile option."""
         # Mock command line arguments
@@ -544,7 +563,7 @@ class TestEbookManagerCLI(unittest.TestCase):
         mock_scan.assert_called_once_with(self.test_dir, ['.epub', '.pdf'], True)
     
     @patch('argparse.ArgumentParser.parse_args')
-    @patch('ebook_manager.import_collection')
+    @patch('ebook_manager.__main__.import_collection')
     def test_main_import_command_with_onefile(self, mock_import, mock_parse_args):
         """Test main function with import command and --onefile option."""
         # Mock command line arguments
@@ -562,7 +581,7 @@ class TestEbookManagerCLI(unittest.TestCase):
         mock_import.assert_called_once_with(self.test_dir, None, True)
     
     @patch('argparse.ArgumentParser.parse_args') 
-    @patch('ebook_manager.batch_import_ebooks')
+    @patch('ebook_manager.__main__.batch_import_ebooks')
     def test_main_batch_import_with_onefile_and_ext(self, mock_batch_import, mock_parse_args):
         """Test main function with batch-import command using both --onefile and --ext."""
         # Mock command line arguments

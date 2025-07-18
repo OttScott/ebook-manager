@@ -19,7 +19,17 @@ from .core import (
     EBOOK_EXTENSIONS,
 )
 
-from .__main__ import main
+from .__main__ import (
+    main,
+    process_ebook_with_beets,
+    import_ebook_to_beets,
+    scan_collection,
+    import_collection,
+    batch_import_ebooks,
+    test_organization,
+    suggest_organization,
+    import_single_directory,
+)
 
 __all__ = [
     "__version__",
@@ -33,4 +43,12 @@ __all__ = [
     "parse_extensions",
     "FORMAT_PRIORITY",
     "EBOOK_EXTENSIONS",
+    "process_ebook_with_beets",
+    "import_ebook_to_beets",
+    "scan_collection",
+    "import_collection",
+    "batch_import_ebooks",
+    "test_organization",
+    "suggest_organization",
+    "import_single_directory",
 ]
