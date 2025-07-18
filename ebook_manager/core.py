@@ -6,6 +6,7 @@ Contains the fundamental functions for file detection, grouping, and filtering.
 
 import os
 import re
+from typing import List, Optional
 
 # Default ebook file extensions
 EBOOK_EXTENSIONS = [".epub", ".pdf", ".mobi", ".lrf", ".azw", ".azw3"]
@@ -21,13 +22,17 @@ FORMAT_PRIORITY = {
 }
 
 
-def is_ebook_file(filename, allowed_extensions=None):
+def is_ebook_file(
+    filename: str, allowed_extensions: Optional[List[str]] = None
+) -> bool:
     """Check if a file is an ebook based on its extension."""
     extensions = allowed_extensions or EBOOK_EXTENSIONS
     return any(filename.lower().endswith(ext) for ext in extensions)
 
 
-def find_ebooks(directory, allowed_extensions=None):
+def find_ebooks(
+    directory: str, allowed_extensions: Optional[List[str]] = None
+) -> List[str]:
     """Find all ebook files in a directory."""
     ebooks = []
     for root, _, files in os.walk(directory):
@@ -37,7 +42,7 @@ def find_ebooks(directory, allowed_extensions=None):
     return ebooks
 
 
-def extract_book_identifier(filepath):
+def extract_book_identifier(filepath: str) -> str:
     """Extract a simple book identifier from filename for grouping."""
     filename = os.path.basename(filepath)
     # Remove extension
@@ -57,13 +62,13 @@ def extract_book_identifier(filepath):
     return name_without_ext.lower()
 
 
-def filter_onefile_per_book(ebooks):
+def filter_onefile_per_book(ebooks: List[str]) -> List[str]:
     """Filter ebooks to keep only one file per book (highest priority format)."""
     if not ebooks:
         return ebooks
 
     # Group ebooks by book identifier
-    book_groups = {}
+    book_groups: dict[str, List[str]] = {}
     for ebook_path in ebooks:
         book_id = extract_book_identifier(ebook_path)
         if book_id not in book_groups:
@@ -94,7 +99,7 @@ def filter_onefile_per_book(ebooks):
     return filtered_ebooks
 
 
-def parse_extensions(ext_arg):
+def parse_extensions(ext_arg: Optional[str]) -> Optional[List[str]]:
     """Parse extension argument and return list of extensions."""
     if not ext_arg:
         return None

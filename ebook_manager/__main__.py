@@ -10,6 +10,7 @@ import argparse
 import os
 import subprocess
 import sys
+from typing import Optional, List
 
 from .core import filter_onefile_per_book, find_ebooks, is_ebook_file, parse_extensions
 
@@ -17,7 +18,7 @@ from .core import filter_onefile_per_book, find_ebooks, is_ebook_file, parse_ext
 BEETS_EXE = r"F:\ottsc\AppData\Roaming\Python\Python313\Scripts\beet.exe"
 
 
-def process_ebook_with_beets(ebook_path):
+def process_ebook_with_beets(ebook_path: str) -> Optional[str]:
     """Process an ebook using the beets ebook command."""
     try:
         result = subprocess.run(
@@ -32,7 +33,7 @@ def process_ebook_with_beets(ebook_path):
         return None
 
 
-def import_ebook_to_beets(ebook_path):
+def import_ebook_to_beets(ebook_path: str) -> Optional[str]:
     """Import a single ebook using the beets import-ebooks command."""
     try:
         # Use absolute path to avoid path issues
@@ -52,7 +53,11 @@ def import_ebook_to_beets(ebook_path):
         return None
 
 
-def scan_collection(directory, allowed_extensions=None, onefile=False):
+def scan_collection(
+    directory: str,
+    allowed_extensions: Optional[List[str]] = None,
+    onefile: bool = False,
+) -> None:
     """Scan an ebook collection and process each file."""
     print(f"Scanning ebook collection in: {directory}")
     if allowed_extensions:
@@ -82,7 +87,11 @@ def scan_collection(directory, allowed_extensions=None, onefile=False):
         print("-" * 50)
 
 
-def import_collection(directory, allowed_extensions=None, onefile=False):
+def import_collection(
+    directory: str,
+    allowed_extensions: Optional[List[str]] = None,
+    onefile: bool = False,
+) -> None:
     """Import an ebook collection to beets library."""
     print(f"Importing ebook collection from: {directory}")
     if allowed_extensions:
@@ -124,7 +133,11 @@ def import_collection(directory, allowed_extensions=None, onefile=False):
     print(f"Import completed: {imported}/{len(ebooks)} ebooks imported successfully")
 
 
-def batch_import_ebooks(directory, allowed_extensions=None, onefile=False):
+def batch_import_ebooks(
+    directory: str,
+    allowed_extensions: Optional[List[str]] = None,
+    onefile: bool = False,
+) -> None:
     """Import ebooks to beets library using batch import command."""
     print(f"Batch importing ebooks from: {directory}")
     if allowed_extensions:
@@ -195,7 +208,7 @@ def batch_import_ebooks(directory, allowed_extensions=None, onefile=False):
         print(f"Beets executable not found at {BEETS_EXE}")
 
 
-def test_organization(dry_run=True):
+def test_organization(dry_run: bool = True) -> None:
     """Test ebook organization in beets."""
     print("Testing ebook organization...")
 
@@ -242,7 +255,11 @@ def test_organization(dry_run=True):
         print(f"Beets executable not found at {BEETS_EXE}")
 
 
-def suggest_organization(directory, allowed_extensions=None, onefile=False):
+def suggest_organization(
+    directory: str,
+    allowed_extensions: Optional[List[str]] = None,
+    onefile: bool = False,
+) -> None:
     """Suggest how to organize ebooks based on metadata."""
     print(f"Analyzing collection structure in: {directory}")
     if allowed_extensions:
@@ -262,7 +279,7 @@ def suggest_organization(directory, allowed_extensions=None, onefile=False):
         return
 
     authors = set()
-    formats = {}
+    formats: dict[str, int] = {}
 
     for ebook in ebooks:
         # Extract basic info from filename
@@ -298,8 +315,11 @@ def suggest_organization(directory, allowed_extensions=None, onefile=False):
 
 
 def import_single_directory(
-    directory, recursive=False, allowed_extensions=None, onefile=False
-):
+    directory: str,
+    recursive: bool = False,
+    allowed_extensions: Optional[List[str]] = None,
+    onefile: bool = False,
+) -> None:
     """Import ebooks from a single directory (non-recursive by default)."""
     print(f"Importing ebooks from: {directory}")
     if allowed_extensions:
@@ -365,7 +385,7 @@ def import_single_directory(
         print(f"Beets executable not found at {BEETS_EXE}")
 
 
-def main():
+def main() -> None:
     """Main function with argument parsing."""
     parser = argparse.ArgumentParser(
         description="Ebook Collection Manager for Beets",
