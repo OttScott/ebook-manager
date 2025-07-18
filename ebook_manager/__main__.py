@@ -10,7 +10,7 @@ import argparse
 import os
 import subprocess
 import sys
-from typing import Optional, List
+from typing import List, Optional
 
 from .core import filter_onefile_per_book, find_ebooks, is_ebook_file, parse_extensions
 
