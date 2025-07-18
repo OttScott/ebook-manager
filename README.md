@@ -13,7 +13,7 @@ A standalone command-line utility for advanced ebook collection management. This
 
 ## Installation
 
-### From Source
+### Quick Install
 
 1. Clone this repository:
    ```bash
@@ -21,31 +21,61 @@ A standalone command-line utility for advanced ebook collection management. This
    cd ebook-manager
    ```
 
-2. Install in development mode:
+2. Install the package:
    ```bash
    pip install -e .
    ```
 
-3. (Optional) Install beets-ebooks plugin for enhanced functionality:
+3. Add to PATH (Windows):
    ```bash
-   pip install beets-ebooks
+   # Run the provided script to add Python Scripts to PATH
+   .\add_to_path.ps1   # PowerShell
+   # OR
+   add_to_path.bat     # Command Prompt
    ```
+
+4. (Optional) Install beets-ebooks plugin for enhanced functionality:
+   ```bash
+   pip install beets beets-ebooks
+   ```
+
+### Verify Installation
+
+```bash
+# Test the commands work
+ebook-manager --help
+ebm --help
+
+# Alternative: Use Python module execution
+python -m ebook_manager --help
+```
 
 ## Configuration
 
-Before using ebook-manager, configure the beets executable path in `ebook_manager.py`:
-
-```python
-BEETS_EXE = r"path/to/your/beet.exe"  # Adjust to your beets installation
-```
+Update the beets executable path by editing the `BEETS_EXE` variable in the installed package, or set an environment variable.
 
 ## Usage
+
+### Command-Line Interface
+
+After installation, you can use any of these commands:
+
+```bash
+# Full command name
+ebook-manager scan C:/Books/
+
+# Short alias (easier to type)
+ebm scan C:/Books/
+
+# Python module execution
+python -m ebook_manager scan C:/Books/
+```
 
 ### Basic Commands
 
 ```bash
 # Scan a collection (dry run)
-python ebook_manager.py scan /path/to/books/
+ebook-manager scan /path/to/books/
 
 # Import all ebooks from a directory
 python ebook_manager.py import /path/to/books/

@@ -53,7 +53,8 @@ Repository = "https://github.com/OttScott/ebook-manager.git"
 "Bug Tracker" = "https://github.com/OttScott/ebook-manager/issues"
 
 [project.scripts]
-ebook-manager = "ebook_manager:main"
+ebook-manager = "ebook_manager.__main__:main"
+ebm = "ebook_manager.__main__:main"
 
 [tool.setuptools]
 packages = ["ebook_manager"]
