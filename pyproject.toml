@@ -1,0 +1,101 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ebook-manager"
+dynamic = ["version"]
+description = "Advanced ebook collection management utility with beets integration"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+authors = [
+    {name = "OttScott", email = "your.email@example.com"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: System :: Archiving",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "pathlib2; python_version<'3.4'",
+]
+
+[project.optional-dependencies]
+beets = [
+    "beets>=1.6.0",
+    "beets-ebooks",
+]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "flake8",
+    "black",
+    "isort",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://github.com/OttScott/ebook-manager"
+Repository = "https://github.com/OttScott/ebook-manager.git"
+"Bug Tracker" = "https://github.com/OttScott/ebook-manager/issues"
+
+[project.scripts]
+ebook-manager = "ebook_manager:main"
+
+[tool.setuptools]
+packages = ["ebook_manager"]
+
+[tool.setuptools.dynamic]
+version = {attr = "ebook_manager.__version__"}
+
+[tool.setuptools_scm]
+write_to = "ebook_manager/_version.py"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 88
+target-version = ['py37']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+
+[tool.mypy]
+python_version = "3.7"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

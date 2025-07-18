@@ -1,0 +1,9 @@
+# Development dependencies for ebook-manager
+pytest>=6.0
+pytest-cov
+flake8
+black
+isort
+mypy
+build
+twine

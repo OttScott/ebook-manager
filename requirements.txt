@@ -1,0 +1,9 @@
+# Optional runtime dependencies
+# These are not required but enhance functionality
+
+# For beets integration (optional)
+beets>=1.6.0
+beets-ebooks
+
+# For enhanced file operations (optional)
+pathlib2; python_version<"3.4"
