@@ -1,5 +1,13 @@
 # Installation Guide
 
+## Requirements
+
+- **Python 3.9 or higher** (tested with Python 3.11 and 3.13)
+- **pip** (Python package installer)
+- **beets** with the ebooks plugin configured
+
+**Note:** Make sure you're using the correct Python version when installing. If you have multiple Python installations, the executables will be installed in the Scripts directory of the Python version you use for installation.
+
 ## Installing Ebook Manager
 
 There are several ways to install and use the ebook-manager utility:
@@ -104,6 +112,33 @@ ebm test-organize
 ```
 
 ## Troubleshooting
+
+### Multiple Python Versions
+
+If you have multiple Python installations and the commands are not found:
+
+1. **Check which Python was used for installation:**
+   ```bash
+   python --version
+   pip show ebook-manager
+   ```
+
+2. **Use the specific Python version:**
+   ```bash
+   python3.13 -m pip install -e .
+   # or
+   "E:/Program Files/Python313/python.exe" -m pip install -e .
+   ```
+
+3. **The executables will be in the Scripts directory of the Python version used:**
+   - Python 3.13: `F:\ottsc\AppData\Roaming\Python\Python313\Scripts\`
+   - Python 3.11: `F:\ottsc\AppData\Roaming\Python\Python311\Scripts\`
+
+4. **Windows users can use the PATH setup scripts:**
+   ```powershell
+   # Run from the project directory
+   .\add_to_path.ps1
+   ```
 
 ### Command not found
 - Ensure Python Scripts directory is in your PATH

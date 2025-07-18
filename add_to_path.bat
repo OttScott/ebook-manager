@@ -5,7 +5,7 @@ REM Run this as Administrator if you want system-wide installation
 echo Adding Python Scripts directory to PATH...
 
 REM Get the Python Scripts directory dynamically
-for /f "tokens=*" %%i in ('python -c "import site; print(site.USER_BASE + '\\Scripts')"') do set SCRIPTS_DIR=%%i
+for /f "tokens=*" %%i in ('python -c "import site; import sys; import os; user_base = site.USER_BASE; python_version = f'Python{sys.version_info.major}{sys.version_info.minor}'; versioned_scripts = os.path.join(user_base, python_version, 'Scripts'); generic_scripts = os.path.join(user_base, 'Scripts'); print(versioned_scripts if os.path.exists(versioned_scripts) else generic_scripts)"') do set SCRIPTS_DIR=%%i
 
 echo Python Scripts directory: %SCRIPTS_DIR%
 
