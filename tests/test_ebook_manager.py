@@ -12,15 +12,20 @@ from ebook_manager.__main__ import (
     BEETS_EXE,
     batch_import_ebooks,
     import_collection,
+    import_collection_dual,
     import_ebook_to_beets,
+    import_ebook_to_calibre,
     process_ebook_with_beets,
     scan_collection,
+    scan_collection_calibre,
 )
 from ebook_manager.core import (
     FORMAT_PRIORITY,
     extract_book_identifier,
     filter_onefile_per_book,
+    find_calibredb,
     find_ebooks,
+    import_to_calibre,
     is_ebook_file,
     parse_extensions,
 )
@@ -609,6 +614,303 @@ class TestEbookManagerCLI(unittest.TestCase):
 
         # Should call batch_import_ebooks with both extensions and onefile=True
         mock_batch_import.assert_called_once_with(self.test_dir, [".epub"], True)
+
+
+class TestCalibreIntegration(unittest.TestCase):
+    """Test cases for Calibre integration functionality."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = tempfile.mkdtemp()
+
+        # Create test ebook files
+        test_books = [
+            "Test Book.epub",
+            "Another Book.pdf",
+            "Third Book.mobi",
+        ]
+
+        for book in test_books:
+            file_path = os.path.join(self.test_dir, book)
+            with open(file_path, "w") as f:
+                f.write("dummy content")
+
+    def tearDown(self):
+        """Clean up test fixtures."""
+        import shutil
+
+        shutil.rmtree(self.test_dir)
+
+    @patch("ebook_manager.core.shutil.which")
+    @patch("ebook_manager.core.os.path.isfile")
+    def test_find_calibredb_in_path(self, mock_isfile, mock_which):
+        """Test find_calibredb when calibredb is in PATH."""
+        mock_which.return_value = "/usr/bin/calibredb"
+
+        result = find_calibredb()
+
+        mock_which.assert_called_with("calibredb")
+        self.assertEqual(result, "/usr/bin/calibredb")
+
+    @patch("ebook_manager.core.shutil.which")
+    @patch("ebook_manager.core.os.path.isfile")
+    def test_find_calibredb_windows_exe_in_path(self, mock_isfile, mock_which):
+        """Test find_calibredb when calibredb.exe is in PATH on Windows."""
+
+        def mock_which_side_effect(name):
+            if name == "calibredb":
+                return None
+            elif name == "calibredb.exe":
+                return "C:\\Program Files\\Calibre2\\calibredb.exe"
+            return None
+
+        mock_which.side_effect = mock_which_side_effect
+
+        result = find_calibredb()
+
+        self.assertEqual(result, "C:\\Program Files\\Calibre2\\calibredb.exe")
+
+    @patch("ebook_manager.core.shutil.which")
+    @patch("ebook_manager.core.os.path.isfile")
+    def test_find_calibredb_fallback_paths(self, mock_isfile, mock_which):
+        """Test find_calibredb when using fallback installation paths."""
+        mock_which.return_value = None  # Not in PATH
+
+        def mock_isfile_side_effect(path):
+            return path == r"C:\Program Files\Calibre2\calibredb.exe"
+
+        mock_isfile.side_effect = mock_isfile_side_effect
+
+        result = find_calibredb()
+
+        self.assertEqual(result, r"C:\Program Files\Calibre2\calibredb.exe")
+
+    @patch("ebook_manager.core.shutil.which")
+    @patch("ebook_manager.core.os.path.isfile")
+    def test_find_calibredb_not_found(self, mock_isfile, mock_which):
+        """Test find_calibredb when Calibre is not installed."""
+        mock_which.return_value = None
+        mock_isfile.return_value = False
+
+        result = find_calibredb()
+
+        self.assertIsNone(result)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("ebook_manager.core.subprocess.run")
+    def test_import_to_calibre_success(self, mock_run, mock_find):
+        """Test successful import to Calibre."""
+        mock_find.return_value = "/usr/bin/calibredb"
+        mock_result = MagicMock()
+        mock_result.stdout = "Added book ids: 123"
+        mock_run.return_value = mock_result
+
+        result = import_to_calibre("/path/to/book.epub")
+
+        self.assertTrue(result)
+        mock_run.assert_called_once()
+
+    @patch("ebook_manager.core.find_calibredb")
+    def test_import_to_calibre_no_calibre(self, mock_find):
+        """Test import to Calibre when Calibre is not found."""
+        mock_find.return_value = None
+
+        result = import_to_calibre("/path/to/book.epub")
+
+        self.assertFalse(result)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("ebook_manager.core.subprocess.run")
+    def test_import_to_calibre_failure(self, mock_run, mock_find):
+        """Test failed import to Calibre."""
+        mock_find.return_value = "/usr/bin/calibredb"
+        mock_run.side_effect = subprocess.CalledProcessError(1, "calibredb")
+
+        result = import_to_calibre("/path/to/book.epub")
+
+        self.assertFalse(result)
+
+    @patch("ebook_manager.__main__.find_calibredb")
+    @patch("ebook_manager.__main__.find_ebooks")
+    @patch("builtins.input")
+    @patch("builtins.print")
+    def test_scan_collection_calibre_no_calibre(
+        self, mock_print, mock_input, mock_find_ebooks, mock_find_calibre
+    ):
+        """Test scan_collection_calibre when Calibre is not found."""
+        mock_find_calibre.return_value = None
+
+        scan_collection_calibre(self.test_dir)
+
+        # Should print error message and return early
+        mock_print.assert_any_call(
+            "❌ Calibre not found! Please install Calibre to use this feature."
+        )
+        mock_find_ebooks.assert_not_called()
+
+    @patch("ebook_manager.__main__.find_calibredb")
+    @patch("ebook_manager.__main__.find_ebooks")
+    @patch("ebook_manager.__main__.import_ebook_to_calibre")
+    @patch("builtins.input")
+    @patch("builtins.print")
+    def test_scan_collection_calibre_success(
+        self, mock_print, mock_input, mock_import, mock_find_ebooks, mock_find_calibre
+    ):
+        """Test successful scan_collection_calibre."""
+        mock_find_calibre.return_value = "/usr/bin/calibredb"
+        mock_find_ebooks.return_value = ["/path/to/book1.epub", "/path/to/book2.pdf"]
+        mock_input.return_value = "y"
+        mock_import.return_value = True
+
+        scan_collection_calibre(self.test_dir)
+
+        # Should find Calibre and process ebooks
+        mock_print.assert_any_call("✓ Found Calibre at: /usr/bin/calibredb")
+        self.assertEqual(mock_import.call_count, 2)
+
+    @patch("ebook_manager.__main__.find_calibredb")
+    @patch("ebook_manager.__main__.find_ebooks")
+    @patch("builtins.input")
+    @patch("builtins.print")
+    def test_scan_collection_calibre_cancelled(
+        self, mock_print, mock_input, mock_find_ebooks, mock_find_calibre
+    ):
+        """Test scan_collection_calibre when user cancels."""
+        mock_find_calibre.return_value = "/usr/bin/calibredb"
+        mock_find_ebooks.return_value = ["/path/to/book.epub"]
+        mock_input.return_value = "n"
+
+        scan_collection_calibre(self.test_dir)
+
+        mock_print.assert_any_call("Import cancelled.")
+
+    @patch("ebook_manager.__main__.find_calibredb")
+    @patch("ebook_manager.__main__.import_ebook_to_beets")
+    @patch("ebook_manager.__main__.import_ebook_to_calibre")
+    @patch("ebook_manager.__main__.find_ebooks")
+    @patch("builtins.input")
+    @patch("builtins.print")
+    @patch("os.path.exists")
+    def test_import_collection_dual_both_available(
+        self,
+        mock_exists,
+        mock_print,
+        mock_input,
+        mock_find_ebooks,
+        mock_calibre_import,
+        mock_beets_import,
+        mock_find_calibre,
+    ):
+        """Test dual import when both beets and Calibre are available."""
+        mock_find_calibre.return_value = "/usr/bin/calibredb"
+        mock_exists.return_value = True  # BEETS_EXE exists
+        mock_find_ebooks.return_value = ["/path/to/book.epub"]
+        mock_input.return_value = "y"
+        mock_beets_import.return_value = "Successfully imported"
+        mock_calibre_import.return_value = True
+
+        import_collection_dual(self.test_dir)
+
+        mock_print.assert_any_call("✓ Using: beets + Calibre")
+        mock_beets_import.assert_called_once()
+        mock_calibre_import.assert_called_once()
+
+    @patch("ebook_manager.__main__.find_calibredb")
+    @patch("ebook_manager.__main__.find_ebooks")
+    @patch("builtins.print")
+    @patch("os.path.exists")
+    def test_import_collection_dual_neither_available(
+        self, mock_exists, mock_print, mock_find_ebooks, mock_find_calibre
+    ):
+        """Test dual import when neither beets nor Calibre are available."""
+        mock_find_calibre.return_value = None
+        mock_exists.return_value = False
+
+        import_collection_dual(self.test_dir)
+
+        mock_print.assert_any_call("❌ Neither beets nor Calibre found!")
+        mock_find_ebooks.assert_not_called()
+
+    def test_import_ebook_to_calibre_success(self):
+        """Test successful import_ebook_to_calibre wrapper function."""
+        with patch("ebook_manager.__main__.import_to_calibre") as mock_import:
+            mock_import.return_value = True
+
+            result = import_ebook_to_calibre("/path/to/book.epub")
+
+            self.assertTrue(result)
+            mock_import.assert_called_once_with("/path/to/book.epub")
+
+    def test_import_ebook_to_calibre_failure(self):
+        """Test failed import_ebook_to_calibre wrapper function."""
+        with patch("ebook_manager.__main__.import_to_calibre") as mock_import:
+            mock_import.side_effect = subprocess.CalledProcessError(1, "calibredb")
+
+            result = import_ebook_to_calibre("/path/to/book.epub")
+
+            self.assertFalse(result)
+
+
+class TestCalibreCommands(unittest.TestCase):
+    """Test cases for Calibre CLI commands."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        """Clean up test fixtures."""
+        import shutil
+
+        shutil.rmtree(self.test_dir)
+
+    @patch("argparse.ArgumentParser.parse_args")
+    @patch("ebook_manager.__main__.scan_collection_calibre")
+    def test_main_calibre_scan_command(self, mock_scan, mock_parse_args):
+        """Test main function with calibre-scan command."""
+        mock_args = MagicMock()
+        mock_args.command = "calibre-scan"
+        mock_args.path = self.test_dir
+        mock_args.ext = None
+        mock_args.onefile = False
+        mock_parse_args.return_value = mock_args
+
+        with patch("os.path.isdir", return_value=True):
+            ebook_manager.main()
+
+        mock_scan.assert_called_once_with(self.test_dir, None, False)
+
+    @patch("argparse.ArgumentParser.parse_args")
+    @patch("ebook_manager.__main__.scan_collection_calibre")
+    def test_main_calibre_import_command(self, mock_scan, mock_parse_args):
+        """Test main function with calibre-import command."""
+        mock_args = MagicMock()
+        mock_args.command = "calibre-import"
+        mock_args.path = self.test_dir
+        mock_args.ext = ".epub"
+        mock_args.onefile = True
+        mock_parse_args.return_value = mock_args
+
+        with patch("os.path.isdir", return_value=True):
+            ebook_manager.main()
+
+        mock_scan.assert_called_once_with(self.test_dir, [".epub"], True)
+
+    @patch("argparse.ArgumentParser.parse_args")
+    @patch("ebook_manager.__main__.import_collection_dual")
+    def test_main_dual_import_command(self, mock_dual, mock_parse_args):
+        """Test main function with dual-import command."""
+        mock_args = MagicMock()
+        mock_args.command = "dual-import"
+        mock_args.path = self.test_dir
+        mock_args.ext = ".epub,.pdf"
+        mock_args.onefile = False
+        mock_parse_args.return_value = mock_args
+
+        with patch("os.path.isdir", return_value=True):
+            ebook_manager.main()
+
+        mock_dual.assert_called_once_with(self.test_dir, [".epub", ".pdf"], False)
 
 
 if __name__ == "__main__":

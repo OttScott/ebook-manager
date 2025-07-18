@@ -132,6 +132,42 @@ python ebook_manager.py import-dir "C:/Books/Douglas Adams/Hitchhiker's Guide/"
 python ebook_manager.py analyze C:/Books/
 ```
 
+## Calibre Integration
+
+The tool includes optional integration with Calibre for additional ebook management capabilities.
+
+### New Commands
+
+- `calibre-scan <directory>` - Scan for ebooks and check Calibre availability
+- `calibre-import <directory>` - Import ebooks directly into Calibre
+- `dual-import <directory>` - Import into both Beets and Calibre
+
+### Requirements
+
+- Calibre must be installed on your system
+- The tool automatically detects Calibre in the following order:
+  1. **PATH detection** (if you chose "Add Calibre to PATH" during installation)
+  2. **Common installation paths** (fallback for standard Windows installations)
+
+### Detection Behavior
+
+- ✅ **Best**: If Calibre is in your PATH, it will be found immediately
+- ✅ **Fallback**: If not in PATH, common Windows installation locations are checked
+- ❌ **Manual**: If neither works, you may need to add Calibre to your PATH manually
+
+### Usage Examples
+
+```bash
+# Scan for ebooks and test Calibre detection
+ebook-manager calibre-scan C:/Books/
+
+# Import ebooks into Calibre only
+ebook-manager calibre-import C:/Books/ --ext .epub --onefile
+
+# Import into both Beets and Calibre
+ebook-manager dual-import C:/Books/ --ext .epub,.pdf
+```
+
 ## Integration with Beets-Ebooks
 
 This utility is designed to work alongside the [beets-ebooks plugin](https://github.com/OttScott/beets-ebooks). The plugin provides the core beets integration, while this utility offers advanced collection management features.
@@ -157,6 +193,9 @@ This utility is designed to work alongside the [beets-ebooks plugin](https://git
 | `import` | Import ebooks to beets | `--ext`, `--onefile` |
 | `import-dir` | Import from single directory | `--ext`, `--onefile` |
 | `batch-import` | Batch import with progress | `--ext`, `--onefile` |
+| `calibre-scan` | Scan and check Calibre availability | `--ext`, `--onefile` |
+| `calibre-import` | Import ebooks to Calibre | `--ext`, `--onefile` |
+| `dual-import` | Import to both Beets and Calibre | `--ext`, `--onefile` |
 | `analyze` | Analyze collection structure | `--ext`, `--onefile` |
 | `test-organize` | Test organization (dry run) | None |
 | `organize` | Actually organize files | None |
@@ -167,7 +206,7 @@ This utility is designed to work alongside the [beets-ebooks plugin](https://git
 - `--ext EXTENSIONS`: Comma-separated file extensions (e.g., `--ext .epub,.pdf`)
 - `--onefile`: Import only one file per book (highest priority format)
 
-## Requirements
+## System Requirements
 
 - Python 3.7+
 - Beets (for import functionality)

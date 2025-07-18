@@ -12,7 +12,14 @@ import subprocess
 import sys
 from typing import List, Optional
 
-from .core import filter_onefile_per_book, find_ebooks, is_ebook_file, parse_extensions
+from .core import (
+    filter_onefile_per_book,
+    find_calibredb,
+    find_ebooks,
+    import_to_calibre,
+    is_ebook_file,
+    parse_extensions,
+)
 
 # Configuration - adjust these paths to match your setup
 BEETS_EXE = r"F:\ottsc\AppData\Roaming\Python\Python313\Scripts\beet.exe"
@@ -51,6 +58,16 @@ def import_ebook_to_beets(ebook_path: str) -> Optional[str]:
     except FileNotFoundError:
         print(f"Beets executable not found at {BEETS_EXE}")
         return None
+
+
+def import_ebook_to_calibre(ebook_path: str) -> bool:
+    """Import a single ebook using Calibre."""
+    try:
+        success = import_to_calibre(ebook_path)
+        return success
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"Error importing {ebook_path} to Calibre: {e}")
+        return False
 
 
 def scan_collection(
@@ -385,10 +402,160 @@ def import_single_directory(
         print(f"Beets executable not found at {BEETS_EXE}")
 
 
+def scan_collection_calibre(
+    directory: str,
+    allowed_extensions: Optional[List[str]] = None,
+    onefile: bool = False,
+) -> None:
+    """Scan an ebook collection and import to Calibre."""
+    print(f"Scanning ebook collection for Calibre import: {directory}")
+
+    # Check if Calibre is available
+    calibredb = find_calibredb()
+    if not calibredb:
+        print("❌ Calibre not found! Please install Calibre to use this feature.")
+        print("Download from: https://calibre-ebook.com/download")
+        return
+
+    print(f"✓ Found Calibre at: {calibredb}")
+
+    if allowed_extensions:
+        print(f"Filtering by extensions: {allowed_extensions}")
+    if onefile:
+        print("One-file mode: selecting highest priority format per book")
+
+    ebooks = find_ebooks(directory, allowed_extensions)
+
+    if onefile:
+        print(f"\nFound {len(ebooks)} total ebook(s) before filtering")
+        ebooks = filter_onefile_per_book(ebooks)
+        print(f"After one-file filtering: {len(ebooks)} ebook(s)")
+
+    if not ebooks:
+        print("No ebook files found.")
+        return
+
+    print(f"Found {len(ebooks)} ebook(s)")
+    response = input(f"Import all {len(ebooks)} ebooks to Calibre library? (y/N): ")
+
+    if response.lower() not in ["y", "yes"]:
+        print("Import cancelled.")
+        return
+
+    print("-" * 50)
+    imported = 0
+
+    for i, ebook in enumerate(ebooks, 1):
+        print(f"\n[{i}/{len(ebooks)}] Importing to Calibre: {os.path.basename(ebook)}")
+        if import_ebook_to_calibre(ebook):
+            imported += 1
+            print("✓ Imported successfully")
+        else:
+            print("✗ Import failed")
+
+    print("-" * 50)
+    print(
+        f"Calibre import completed: {imported}/{len(ebooks)} ebooks imported successfully"
+    )
+
+
+def import_collection_dual(
+    directory: str,
+    allowed_extensions: Optional[List[str]] = None,
+    onefile: bool = False,
+    use_beets: bool = True,
+    use_calibre: bool = True,
+) -> None:
+    """Import an ebook collection to both beets and Calibre."""
+    print(f"Dual import (beets + Calibre) from: {directory}")
+
+    # Check availability
+    beets_available = os.path.exists(BEETS_EXE) if use_beets else False
+    calibre_available = find_calibredb() is not None if use_calibre else False
+
+    if not beets_available and not calibre_available:
+        print("❌ Neither beets nor Calibre found!")
+        return
+
+    if use_beets and not beets_available:
+        print("⚠ Beets not found, using Calibre only")
+        use_beets = False
+
+    if use_calibre and not calibre_available:
+        print("⚠ Calibre not found, using beets only")
+        use_calibre = False
+
+    # Build status message
+    status_parts = []
+    if use_beets:
+        status_parts.append("beets")
+    if use_calibre:
+        status_parts.append("Calibre")
+    print(f"✓ Using: {' + '.join(status_parts)}")
+
+    if allowed_extensions:
+        print(f"Filtering by extensions: {allowed_extensions}")
+    if onefile:
+        print("One-file mode: selecting highest priority format per book")
+
+    ebooks = find_ebooks(directory, allowed_extensions)
+
+    if onefile:
+        print(f"\nFound {len(ebooks)} total ebook(s) before filtering")
+        ebooks = filter_onefile_per_book(ebooks)
+        print(f"After one-file filtering: {len(ebooks)} ebook(s)")
+
+    if not ebooks:
+        print("No ebook files found.")
+        return
+
+    print(f"Found {len(ebooks)} ebook(s)")
+    response = input(f"Import all {len(ebooks)} ebooks to selected libraries? (y/N): ")
+
+    if response.lower() not in ["y", "yes"]:
+        print("Import cancelled.")
+        return
+
+    print("-" * 50)
+    beets_imported = 0
+    calibre_imported = 0
+
+    for i, ebook in enumerate(ebooks, 1):
+        print(f"\n[{i}/{len(ebooks)}] Processing: {os.path.basename(ebook)}")
+
+        # Import to beets
+        if use_beets:
+            print("  → Importing to beets...")
+            output = import_ebook_to_beets(ebook)
+            if output and "Successfully imported" in output:
+                beets_imported += 1
+                print("    ✓ Beets import successful")
+            else:
+                print("    ✗ Beets import failed")
+
+        # Import to Calibre
+        if use_calibre:
+            print("  → Importing to Calibre...")
+            if import_ebook_to_calibre(ebook):
+                calibre_imported += 1
+                print("    ✓ Calibre import successful")
+            else:
+                print("    ✗ Calibre import failed")
+
+    print("-" * 50)
+    print("Dual import completed:")
+    if use_beets:
+        print(f"  Beets: {beets_imported}/{len(ebooks)} ebooks imported successfully")
+    if use_calibre:
+        print(
+            f"  Calibre: {calibre_imported}/{len(ebooks)} ebooks imported successfully"
+        )
+
+
 def main() -> None:
     """Main function with argument parsing."""
     parser = argparse.ArgumentParser(
-        description="Ebook Collection Manager for Beets",
+        description="Ebook Collection Manager for Beets & Calibre",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -399,6 +566,8 @@ Examples:
   python ebook_manager.py import C:/Books/ --ext .epub,.mobi --onefile
   python ebook_manager.py import-dir "B:/Unsorted/Books mystery/Lee Child (95)/"
   python ebook_manager.py batch-import C:/Books/ --ext .epub --onefile
+  python ebook_manager.py calibre-import C:/Books/ --ext .epub --onefile
+  python ebook_manager.py dual-import C:/Books/ --ext .epub,.pdf
   python ebook_manager.py test-organize
         """,
     )
@@ -412,6 +581,9 @@ Examples:
             "import",
             "import-dir",
             "batch-import",
+            "calibre-scan",
+            "calibre-import",
+            "dual-import",
             "test-organize",
             "organize",
         ],
@@ -453,6 +625,15 @@ Examples:
             "  python ebook_manager.py batch-import <directory> "
             "[--ext .epub] [--onefile]"
         )
+        print(
+            "  python ebook_manager.py calibre-scan <directory> [--ext .epub] [--onefile]"
+        )
+        print(
+            "  python ebook_manager.py calibre-import <directory> [--ext .epub] [--onefile]"
+        )
+        print(
+            "  python ebook_manager.py dual-import <directory> [--ext .epub] [--onefile]"
+        )
         print("  python ebook_manager.py test-organize")
         print("  python ebook_manager.py organize")
         print("\nOptions:")
@@ -472,6 +653,14 @@ Examples:
         print("  python ebook_manager.py import C:/Books/ --onefile")
 
         print("  python ebook_manager.py batch-import C:/Books/ --ext .epub --onefile")
+        print(
+            "  python ebook_manager.py calibre-import C:/Books/ --ext .epub --onefile"
+        )
+        print("  python ebook_manager.py dual-import C:/Books/ --ext .epub,.pdf")
+        print("\nCalibre Commands:")
+        print("  calibre-scan       Scan and import ebooks to Calibre library")
+        print("  calibre-import     Import ebooks to Calibre library")
+        print("  dual-import        Import to both beets and Calibre libraries")
         print("\nOne-file priority order (highest to lowest):")
         print("  .epub > .mobi > .azw > .azw3 > .pdf > .lrf")
         return
@@ -556,6 +745,29 @@ Examples:
     elif args.command == "organize":
         test_organization(dry_run=False)
 
+    elif args.command == "calibre-scan":
+        if not args.path:
+            print("Error: calibre-scan command requires a directory path")
+            return
+        if not os.path.isdir(args.path):
+            print(f"Directory not found: {args.path}")
+            return
+        scan_collection_calibre(args.path, allowed_extensions, onefile)
 
-if __name__ == "__main__":
-    main()
+    elif args.command == "calibre-import":
+        if not args.path:
+            print("Error: calibre-import command requires a directory path")
+            return
+        if not os.path.isdir(args.path):
+            print(f"Directory not found: {args.path}")
+            return
+        scan_collection_calibre(args.path, allowed_extensions, onefile)
+
+    elif args.command == "dual-import":
+        if not args.path:
+            print("Error: dual-import command requires a directory path")
+            return
+        if not os.path.isdir(args.path):
+            print(f"Directory not found: {args.path}")
+            return
+        import_collection_dual(args.path, allowed_extensions, onefile)

@@ -6,6 +6,8 @@ Contains the fundamental functions for file detection, grouping, and filtering.
 
 import os
 import re
+import shutil
+import subprocess
 from typing import List, Optional
 
 # Default ebook file extensions
@@ -115,3 +117,91 @@ def parse_extensions(ext_arg: Optional[str]) -> Optional[List[str]]:
         normalized_extensions.append(ext.lower())
 
     return normalized_extensions
+
+
+def find_calibredb() -> Optional[str]:
+    """Find the calibredb executable on the system."""
+    # First try using shutil.which to find in PATH (recommended installation)
+    calibredb_path = shutil.which("calibredb")
+    if calibredb_path:
+        return calibredb_path
+
+    # Also try with .exe extension on Windows
+    calibredb_path = shutil.which("calibredb.exe")
+    if calibredb_path:
+        return calibredb_path
+
+    # Fallback: Common installation paths for different platforms
+    common_paths = [
+        # Windows paths - multiple drives
+        r"C:\Program Files\Calibre2\calibredb.exe",
+        r"C:\Program Files (x86)\Calibre2\calibredb.exe",
+        r"D:\Program Files\Calibre2\calibredb.exe",
+        r"E:\Program Files\Calibre2\calibredb.exe",
+        r"F:\Program Files\Calibre2\calibredb.exe",
+        # Also try without "2" suffix
+        r"C:\Program Files\Calibre\calibredb.exe",
+        r"C:\Program Files (x86)\Calibre\calibredb.exe",
+        r"D:\Program Files\Calibre\calibredb.exe",
+        r"E:\Program Files\Calibre\calibredb.exe",
+        r"F:\Program Files\Calibre\calibredb.exe",
+    ]
+
+    # Try common installation paths as fallback
+    for path in common_paths:
+        if os.path.isfile(path):
+            return path
+
+    return None
+
+
+def get_calibre_libraries() -> List[str]:
+    """Get list of available Calibre libraries."""
+    calibredb = find_calibredb()
+    if not calibredb:
+        return []
+
+    try:
+        # Get the default library path - just test if we can access calibre
+        subprocess.run(
+            [calibredb, "list_categories"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        # If this succeeds, we have access to at least the default library
+        return ["default"]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
+
+
+def import_to_calibre(
+    file_path: str, calibre_library: Optional[str] = None, add_duplicates: bool = False
+) -> bool:
+    """Import a single ebook file to Calibre library."""
+    calibredb = find_calibredb()
+    if not calibredb:
+        return False
+
+    try:
+        cmd = [calibredb, "add", os.path.abspath(file_path)]
+
+        # Add library specification if provided
+        if calibre_library and calibre_library != "default":
+            cmd.extend(["--library-path", calibre_library])
+
+        # Handle duplicates
+        if not add_duplicates:
+            cmd.append("--ignore-duplicate")
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        return "Added book ids:" in result.stdout or len(result.stdout.strip()) > 0
+
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
