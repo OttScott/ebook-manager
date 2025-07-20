@@ -21,14 +21,16 @@ try {
             if (Test-Path $path) {
                 $pythonCmd = $path
                 break
-            } elseif ($path -like "*python*") {
+            }
+            elseif ($path -like "*python*") {
                 $null = & $path --version 2>&1
                 if ($LASTEXITCODE -eq 0) {
                     $pythonCmd = $path
                     break
                 }
             }
-        } catch {
+        }
+        catch {
             continue
         }
     }
@@ -66,7 +68,8 @@ try {
     # Check if already in PATH
     if ($currentPath -like "*$scriptsDir*") {
         Write-Host "Python Scripts directory is already in user PATH!" -ForegroundColor Green
-    } else {
+    }
+    else {
         # Add to user PATH
         $newPath = "$currentPath;$scriptsDir"
         [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
@@ -86,10 +89,12 @@ try {
         $result = & $ebookManagerExe "--help" 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Host "✓ ebook-manager command is working!" -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "✗ ebook-manager command failed: $result" -ForegroundColor Red
         }
-    } catch {
+    }
+    catch {
         Write-Host "✗ ebook-manager command error: $($_.Exception.Message)" -ForegroundColor Red
     }
     
@@ -98,10 +103,12 @@ try {
         $result = & $ebmExe "--help" 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Host "✓ ebm command is working!" -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "✗ ebm command failed: $result" -ForegroundColor Red
         }
-    } catch {
+    }
+    catch {
         Write-Host "✗ ebm command error: $($_.Exception.Message)" -ForegroundColor Red
     }
     
@@ -111,20 +118,24 @@ try {
     try {
         if (Get-Command "ebook-manager" -ErrorAction SilentlyContinue) {
             Write-Host "✓ ebook-manager is available in PATH!" -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "⚠ ebook-manager not found in PATH (restart terminal to use)" -ForegroundColor Yellow
         }
-    } catch {
+    }
+    catch {
         Write-Host "⚠ ebook-manager PATH test failed (restart terminal to use)" -ForegroundColor Yellow
     }
     
     try {
         if (Get-Command "ebm" -ErrorAction SilentlyContinue) {
             Write-Host "✓ ebm is available in PATH!" -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "⚠ ebm not found in PATH (restart terminal to use)" -ForegroundColor Yellow
         }
-    } catch {
+    }
+    catch {
         Write-Host "⚠ ebm PATH test failed (restart terminal to use)" -ForegroundColor Yellow
     }
     
@@ -142,7 +153,8 @@ try {
     Write-Host "  ebm scan C:/Books/" -ForegroundColor White
     Write-Host "="*60 -ForegroundColor Cyan
     
-} catch {
+}
+catch {
     Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "Make sure Python is installed and accessible from PATH" -ForegroundColor Red
     Read-Host "Press Enter to exit"

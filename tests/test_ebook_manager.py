@@ -23,11 +23,15 @@ from ebook_manager.core import (
     FORMAT_PRIORITY,
     extract_book_identifier,
     filter_onefile_per_book,
+    find_books_in_calibre,
     find_calibredb,
     find_ebooks,
     import_to_calibre,
     is_ebook_file,
     parse_extensions,
+    sync_calibre_after_move,
+    sync_calibre_with_beets_library,
+    update_calibre_book_path,
 )
 
 
@@ -698,16 +702,19 @@ class TestCalibreIntegration(unittest.TestCase):
 
     @patch("ebook_manager.core.find_calibredb")
     @patch("ebook_manager.core.subprocess.run")
-    def test_import_to_calibre_success(self, mock_run, mock_find):
+    @patch("ebook_manager.core.os.path.exists")
+    def test_import_to_calibre_success(self, mock_exists, mock_run, mock_find):
         """Test successful import to Calibre."""
         mock_find.return_value = "/usr/bin/calibredb"
+        mock_exists.return_value = True
         mock_result = MagicMock()
         mock_result.stdout = "Added book ids: 123"
         mock_run.return_value = mock_result
 
-        result = import_to_calibre("/path/to/book.epub")
+        success, message = import_to_calibre("/path/to/book.epub")
 
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIn("Added book ids", message)
         mock_run.assert_called_once()
 
     @patch("ebook_manager.core.find_calibredb")
@@ -715,20 +722,24 @@ class TestCalibreIntegration(unittest.TestCase):
         """Test import to Calibre when Calibre is not found."""
         mock_find.return_value = None
 
-        result = import_to_calibre("/path/to/book.epub")
+        success, message = import_to_calibre("/path/to/book.epub")
 
-        self.assertFalse(result)
+        self.assertFalse(success)
+        self.assertIn("executable not found", message)
 
     @patch("ebook_manager.core.find_calibredb")
     @patch("ebook_manager.core.subprocess.run")
-    def test_import_to_calibre_failure(self, mock_run, mock_find):
+    @patch("ebook_manager.core.os.path.exists")
+    def test_import_to_calibre_failure(self, mock_exists, mock_run, mock_find):
         """Test failed import to Calibre."""
         mock_find.return_value = "/usr/bin/calibredb"
+        mock_exists.return_value = True
         mock_run.side_effect = subprocess.CalledProcessError(1, "calibredb")
 
-        result = import_to_calibre("/path/to/book.epub")
+        success, message = import_to_calibre("/path/to/book.epub")
 
-        self.assertFalse(result)
+        self.assertFalse(success)
+        self.assertIn("failed", message)
 
     @patch("ebook_manager.__main__.find_calibredb")
     @patch("ebook_manager.__main__.find_ebooks")
@@ -834,21 +845,194 @@ class TestCalibreIntegration(unittest.TestCase):
     def test_import_ebook_to_calibre_success(self):
         """Test successful import_ebook_to_calibre wrapper function."""
         with patch("ebook_manager.__main__.import_to_calibre") as mock_import:
-            mock_import.return_value = True
+            mock_import.return_value = (True, "Import successful")
 
             result = import_ebook_to_calibre("/path/to/book.epub")
 
             self.assertTrue(result)
-            mock_import.assert_called_once_with("/path/to/book.epub")
+            mock_import.assert_called_once_with("/path/to/book.epub", verbose=True)
 
     def test_import_ebook_to_calibre_failure(self):
         """Test failed import_ebook_to_calibre wrapper function."""
         with patch("ebook_manager.__main__.import_to_calibre") as mock_import:
-            mock_import.side_effect = subprocess.CalledProcessError(1, "calibredb")
+            mock_import.return_value = (False, "Import failed")
 
             result = import_ebook_to_calibre("/path/to/book.epub")
 
             self.assertFalse(result)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("ebook_manager.core.subprocess.run")
+    def test_find_books_in_calibre_success(self, mock_run, mock_find):
+        """Test successful search for books in Calibre by path."""
+        mock_find.return_value = "/usr/bin/calibredb"
+        mock_result = MagicMock()
+        # New format: id,title,formats where formats contain file paths
+        mock_result.stdout = (
+            "id\ttitle\tformats\n"
+            "123\tTest Book\t/old/path/book.epub\n"
+            "456\tAnother Book\t/old/path/another.pdf,/old/path/another.epub"
+        )
+        mock_run.return_value = mock_result
+
+        result = find_books_in_calibre("/old/path/book.epub")
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["id"], "123")
+        self.assertEqual(result[0]["path"], "/old/path/book.epub")
+        self.assertEqual(result[0]["title"], "Test Book")
+
+    @patch("ebook_manager.core.find_calibredb")
+    def test_find_books_in_calibre_no_calibre(self, mock_find):
+        """Test find_books_in_calibre when Calibre is not found."""
+        mock_find.return_value = None
+
+        result = find_books_in_calibre("/old/path/book.epub")
+
+        self.assertEqual(result, [])
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("ebook_manager.core.subprocess.run")
+    @patch("os.path.exists")
+    def test_update_calibre_book_path_success(self, mock_exists, mock_run, mock_find):
+        """Test successful update of Calibre book path."""
+        mock_find.return_value = "/usr/bin/calibredb"
+        mock_exists.return_value = True
+        mock_result = MagicMock()
+        mock_result.stdout = "Added book ids: 789"
+        mock_run.return_value = mock_result
+
+        result = update_calibre_book_path(
+            "123", "/old/path/book.epub", "/new/path/book.epub"
+        )
+
+        self.assertTrue(result)
+        # Verify two calls: add and remove
+        self.assertEqual(mock_run.call_count, 2)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("ebook_manager.core.find_books_in_calibre")
+    @patch("ebook_manager.core.update_calibre_book_path")
+    @patch("builtins.print")
+    def test_sync_calibre_after_move_success(
+        self, mock_print, mock_update, mock_find_books, mock_find
+    ):
+        """Test successful sync of Calibre database after file moves."""
+        mock_find.return_value = "/usr/bin/calibredb"
+        mock_find_books.return_value = [{"id": "123", "path": "/old/path/book.epub"}]
+        mock_update.return_value = True
+
+        old_paths = ["/old/path/book.epub"]
+        new_paths = ["/new/path/book.epub"]
+
+        result = sync_calibre_after_move(old_paths, new_paths)
+
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(result["not_in_calibre"], 0)
+
+    @patch("ebook_manager.core.find_calibredb")
+    def test_sync_calibre_after_move_no_calibre(self, mock_find):
+        """Test sync when Calibre is not found."""
+        mock_find.return_value = None
+
+        old_paths = ["/old/path/book.epub"]
+        new_paths = ["/new/path/book.epub"]
+
+        result = sync_calibre_after_move(old_paths, new_paths)
+
+        self.assertEqual(result["updated"], 0)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(result["not_in_calibre"], 0)
+
+    def test_sync_calibre_after_move_mismatched_paths(self):
+        """Test sync with mismatched path counts."""
+        old_paths = ["/old/path/book1.epub", "/old/path/book2.epub"]
+        new_paths = ["/new/path/book1.epub"]
+
+        with self.assertRaises(ValueError):
+            sync_calibre_after_move(old_paths, new_paths)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("ebook_manager.core.subprocess.run")
+    def test_sync_calibre_with_beets_library_success(self, mock_run, mock_find):
+        """Test successful sync of Calibre with beets library using metadata matching."""
+        mock_find.return_value = "/usr/bin/calibredb"
+
+        # Mock beets library query with metadata format: path|artist|album|title
+        beets_result = MagicMock()
+        beets_result.returncode = 0
+        beets_result.stdout = (
+            "/path/to/book1.epub|Isaac Asimov|Foundation|Foundation\n"
+            "/path/to/book2.pdf|Douglas Adams|Hitchhiker's Guide|The Hitchhiker's Guide to the Galaxy"
+        )
+
+        # Mock Calibre library query with JSON format
+        calibre_result = MagicMock()
+        calibre_result.returncode = 0
+        calibre_result.stdout = """[
+            {"id": "1", "title": "Foundation", "authors": "Isaac Asimov"},
+            {"id": "2", "title": "The Hitchhiker's Guide to the Galaxy", "authors": "Douglas Adams"}
+        ]"""
+
+        mock_run.side_effect = [beets_result, calibre_result]
+
+        stats = sync_calibre_with_beets_library()
+
+        # Check the results for metadata-based matching
+        self.assertEqual(stats["scanned"], 2)
+        self.assertEqual(stats["updated"], 2)  # Both books found in Calibre
+        self.assertEqual(stats["not_in_calibre"], 0)
+        self.assertEqual(len(stats["missing_paths"]), 0)
+        self.assertFalse("error" in stats)
+
+    @patch("ebook_manager.core.find_calibredb")
+    def test_sync_calibre_with_beets_library_no_calibre(self, mock_find):
+        """Test sync when Calibre is not found."""
+        mock_find.return_value = None
+
+        stats = sync_calibre_with_beets_library()
+
+        self.assertIn("error", stats)
+        self.assertEqual(stats["updated"], 0)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("ebook_manager.core.subprocess.run")
+    def test_sync_calibre_with_beets_library_missing_books(self, mock_run, mock_find):
+        """Test sync when some books are missing from Calibre."""
+        mock_find.return_value = "/usr/bin/calibredb"
+
+        # Mock beets library query - 3 books
+        beets_result = MagicMock()
+        beets_result.returncode = 0
+        beets_result.stdout = (
+            "/path/to/book1.epub|Isaac Asimov|Foundation|Foundation\n"
+            "/path/to/book2.pdf|Douglas Adams|Hitchhiker's Guide|The Hitchhiker's Guide to the Galaxy\n"
+            "/path/to/book3.mobi|Philip K. Dick|Do Androids Dream|Do Androids Dream of Electric Sheep?"
+        )
+
+        # Mock Calibre library query - only 1 book (Foundation)
+        calibre_result = MagicMock()
+        calibre_result.returncode = 0
+        calibre_result.stdout = """[
+            {"id": "1", "title": "Foundation", "authors": "Isaac Asimov"}
+        ]"""
+
+        mock_run.side_effect = [beets_result, calibre_result]
+
+        stats = sync_calibre_with_beets_library()
+
+        # Check that missing books are correctly identified
+        self.assertEqual(stats["scanned"], 3)
+        self.assertEqual(stats["updated"], 1)  # Only Foundation found in Calibre
+        self.assertEqual(stats["not_in_calibre"], 2)  # 2 books missing
+        self.assertEqual(len(stats["missing_paths"]), 2)  # 2 missing paths
+
+        # Check the specific missing paths
+        expected_missing = ["/path/to/book2.pdf", "/path/to/book3.mobi"]
+        self.assertEqual(sorted(stats["missing_paths"]), sorted(expected_missing))
+
+        self.assertFalse("error" in stats)
 
 
 class TestCalibreCommands(unittest.TestCase):

@@ -11,6 +11,7 @@ __email__ = "your.email@example.com"
 
 from .__main__ import (
     batch_import_ebooks,
+    calibre_takes_control_workflow_cli,
     import_collection,
     import_ebook_to_beets,
     import_single_directory,
@@ -50,4 +51,5 @@ __all__ = [
     "test_organization",
     "suggest_organization",
     "import_single_directory",
+    "calibre_takes_control_workflow_cli",
 ]

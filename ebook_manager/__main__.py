@@ -13,12 +13,15 @@ import sys
 from typing import List, Optional
 
 from .core import (
+    calibre_takes_control_workflow,
     filter_onefile_per_book,
     find_calibredb,
     find_ebooks,
     import_to_calibre,
     is_ebook_file,
     parse_extensions,
+    sync_calibre_after_move,
+    sync_calibre_with_beets_library,
 )
 
 # Configuration - adjust these paths to match your setup
@@ -63,10 +66,16 @@ def import_ebook_to_beets(ebook_path: str) -> Optional[str]:
 def import_ebook_to_calibre(ebook_path: str) -> bool:
     """Import a single ebook using Calibre."""
     try:
-        success = import_to_calibre(ebook_path)
+        success, message = import_to_calibre(ebook_path, verbose=True)
+        if not success:
+            print(
+                f"    Error importing {os.path.basename(ebook_path)} to Calibre: {message}"
+            )
         return success
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"Error importing {ebook_path} to Calibre: {e}")
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError, TypeError) as e:
+        print(
+            f"    Unexpected error importing {os.path.basename(ebook_path)} to Calibre: {e}"
+        )
         return False
 
 
@@ -241,6 +250,19 @@ def test_organization(dry_run: bool = True) -> None:
         print("Current ebooks in library:")
         print(result.stdout)
 
+        # Get current file paths before move
+        old_paths = []
+        if not dry_run:
+            path_result = subprocess.run(
+                [BEETS_EXE, "ls", "-f", "$path", "ebook:true"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            old_paths = [
+                p.strip() for p in path_result.stdout.strip().split("\n") if p.strip()
+            ]
+
         # Show what the move operation would do
         cmd = [BEETS_EXE, "move", "ebook:true"]
         if dry_run:
@@ -254,15 +276,39 @@ def test_organization(dry_run: bool = True) -> None:
 
         if not dry_run:
             print("Files have been organized!")
-            # Show new paths
-            result = subprocess.run(
+
+            # Get new file paths after move
+            path_result = subprocess.run(
                 [BEETS_EXE, "ls", "-f", "$path", "ebook:true"],
                 capture_output=True,
                 text=True,
                 check=True,
             )
+            new_paths = [
+                p.strip() for p in path_result.stdout.strip().split("\n") if p.strip()
+            ]
+
             print("\nNew file locations:")
-            print(result.stdout)
+            print(path_result.stdout)
+
+            # Sync Calibre database if Calibre is available and files were moved
+            if old_paths and new_paths and len(old_paths) == len(new_paths):
+                calibredb = find_calibredb()
+                if calibredb:
+                    print("\n" + "=" * 60)
+                    stats = sync_calibre_after_move(old_paths, new_paths)
+                    print("=" * 60)
+                    print("📊 Calibre sync summary:")
+                    print(f"  ✅ Updated: {stats['updated']} entries")
+                    print(f"  ❌ Failed: {stats['failed']} entries")
+                    print(f"  ℹ️  Not in Calibre: {stats['not_in_calibre']} files")
+                else:
+                    print("\nℹ️  Calibre not found - skipping database sync")
+            elif old_paths and new_paths:
+                print(
+                    f"\n⚠️  Path count mismatch - old: {len(old_paths)}, new: {len(new_paths)}"
+                )
+                print("   Skipping Calibre sync for safety")
 
     except subprocess.CalledProcessError as e:
         print(f"Error testing organization: {e}")
@@ -552,6 +598,503 @@ def import_collection_dual(
         )
 
 
+def sync_calibre_database() -> None:
+    """Sync Calibre database with current beets library state."""
+    print("🔄 Calibre Database Sync")
+    print("=" * 50)
+    print("This will update Calibre's database to match the current")
+    print("file locations in your beets library.\n")
+
+    # Check if Calibre is available
+    calibredb = find_calibredb()
+    if not calibredb:
+        print("❌ Calibre not found! Please install Calibre to use this feature.")
+        print("Download from: https://calibre-ebook.com/download")
+        return
+
+    print(f"✓ Found Calibre at: {calibredb}")
+
+    # Check if beets is available
+    if not os.path.exists(BEETS_EXE):
+        print(f"❌ Beets not found at: {BEETS_EXE}")
+        print("Please check your beets installation.")
+        return
+
+    print(f"✓ Found beets at: {BEETS_EXE}")
+    print()
+
+    response = input("Continue with Calibre database sync? (y/N): ")
+    if response.lower() not in ["y", "yes"]:
+        print("Sync cancelled.")
+        return
+
+    print()
+    stats = sync_calibre_with_beets_library()
+
+    if "error" in stats:
+        print(f"❌ Sync failed: {stats['error']}")
+        return
+
+    print("\n" + "=" * 60)
+    print("📊 Calibre sync completed!")
+    print(f"  📚 Scanned: {stats.get('scanned', 0)} ebooks in beets library")
+    print(f"  ✅ Updated: {stats.get('updated', 0)} Calibre entries")
+    print(f"  ❌ Failed: {stats.get('failed', 0)} updates")
+    print(f"  ℹ️  Not in Calibre: {stats.get('not_in_calibre', 0)} files")
+    print("=" * 60)
+
+    if stats.get("updated", 0) > 0:
+        print(f"\n🎉 Successfully updated {stats['updated']} Calibre entries!")
+    elif stats.get("failed", 0) > 0:
+        print(
+            f"\n⚠️  {stats['failed']} updates failed. Check the output above for details."
+        )
+
+    # Offer to import missing books to Calibre
+    missing_count = stats.get("not_in_calibre", 0)
+    missing_paths = stats.get("missing_paths", [])
+
+    if missing_count > 0 and missing_paths:
+        print(f"\n📥 Found {missing_count} ebooks in beets that are not in Calibre.")
+        response = input("Would you like to import them to Calibre? (y/N): ")
+
+        if response.lower() in ["y", "yes"]:
+            print(
+                f"\n🔄 Starting import of {missing_count} missing ebooks to Calibre..."
+            )
+
+            # Import each missing book
+            imported = 0
+            failed = 0
+
+            for i, ebook_path in enumerate(missing_paths, 1):
+                filename = os.path.basename(ebook_path)
+                print(f"\n[{i}/{len(missing_paths)}] Importing: {filename}")
+
+                if os.path.exists(ebook_path):
+                    success, message = import_to_calibre(ebook_path, verbose=False)
+                    if success:
+                        imported += 1
+                        print("    ✅ Imported successfully")
+                    else:
+                        failed += 1
+                        print(f"    ❌ Import failed: {message}")
+                else:
+                    failed += 1
+                    print(f"    ❌ File not found: {ebook_path}")
+
+            print("\n" + "=" * 60)
+            print("📥 Import to Calibre completed!")
+            print(f"  ✅ Imported: {imported} ebooks")
+            print(f"  ❌ Failed: {failed} ebooks")
+            print("=" * 60)
+
+            if imported > 0:
+                print(f"\n🎉 Successfully imported {imported} ebooks to Calibre!")
+            if failed > 0:
+                print(
+                    f"\n⚠️  {failed} imports failed. Check the output above for details."
+                )
+        else:
+            print("\n✨ Sync completed. Missing books were not imported.")
+    else:
+        print("\n✨ All Calibre entries are already in sync with beets!")
+
+
+def organize_then_import_workflow(
+    directory: str,
+    allowed_extensions: Optional[List[str]] = None,
+    onefile: bool = False,
+    use_calibre: bool = True,
+) -> None:
+    """
+    Recommended workflow: Organize with beets first, then import to Calibre.
+
+    This approach:
+    1. Imports and organizes books with beets (master library)
+    2. Lets beets perfect metadata and file organization
+    3. Imports the well-organized files to Calibre (creates clean copies)
+    4. Avoids sync issues since Calibre gets pre-organized files
+    """
+    print("🔄 Organize-First Workflow")
+    print("=" * 60)
+    print("This workflow organizes books with beets first, then imports")
+    print("the well-organized files to Calibre for the best results.")
+    print()
+
+    # Check availability
+    beets_available = os.path.exists(BEETS_EXE)
+    calibre_available = find_calibredb() is not None if use_calibre else True
+
+    if not beets_available:
+        print("❌ Beets not found! This workflow requires beets.")
+        print(f"Expected location: {BEETS_EXE}")
+        return
+
+    if use_calibre and not calibre_available:
+        print("⚠️  Calibre not found, will organize with beets only")
+        use_calibre = False
+
+    print(f"✓ Found beets at: {BEETS_EXE}")
+    if use_calibre:
+        print(f"✓ Found Calibre at: {find_calibredb()}")
+    print()
+
+    # Step 1: Import and organize with beets
+    print("📥 STEP 1: Import and organize with beets")
+    print("-" * 40)
+
+    ebooks = find_ebooks(directory, allowed_extensions)
+
+    if onefile:
+        print(f"Found {len(ebooks)} total ebook(s) before filtering")
+        ebooks = filter_onefile_per_book(ebooks)
+        print(f"After one-file filtering: {len(ebooks)} ebook(s)")
+
+    if not ebooks:
+        print("No ebook files found.")
+        return
+
+    print(f"Found {len(ebooks)} ebook(s) to import")
+
+    if allowed_extensions:
+        print(f"Filtering by extensions: {allowed_extensions}")
+    if onefile:
+        print("One-file mode: selecting highest priority format per book")
+
+    response = input(f"\nProceed with importing {len(ebooks)} ebooks to beets? (y/N): ")
+    if response.lower() not in ["y", "yes"]:
+        print("Workflow cancelled.")
+        return
+
+    # Import to beets
+    print("\n🔄 Importing to beets library...")
+    beets_imported = 0
+
+    for i, ebook in enumerate(ebooks, 1):
+        print(f"[{i}/{len(ebooks)}] Importing: {os.path.basename(ebook)}")
+        output = import_ebook_to_beets(ebook)
+        if output and "Successfully imported" in output:
+            beets_imported += 1
+            print("  ✅ Imported successfully")
+        else:
+            print("  ❌ Import failed")
+
+    print(f"\nBeets import result: {beets_imported}/{len(ebooks)} successful")
+
+    if beets_imported == 0:
+        print("❌ No books were successfully imported to beets. Stopping workflow.")
+        return
+
+    # Step 2: Organize with beets (optional but recommended)
+    print("\n📁 STEP 2: Organize imported books with beets")
+    print("-" * 40)
+    print("This will move books to their proper organized locations")
+    print("based on the metadata beets extracted.")
+    print()
+
+    response = input("Run beets organization? (Y/n): ")
+    if response.lower() not in ["n", "no"]:
+        try:
+            print("🔄 Organizing books with beets...")
+
+            # Get current paths before organization
+            old_path_result = subprocess.run(
+                [BEETS_EXE, "ls", "-f", "$path", "ebook:true"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            _old_paths = [
+                p.strip()
+                for p in old_path_result.stdout.strip().split("\n")
+                if p.strip()
+            ]
+
+            # Run organization
+            result = subprocess.run(
+                [BEETS_EXE, "move", "ebook:true"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            if result.stdout.strip():
+                print("Organization results:")
+                print(result.stdout)
+            else:
+                print("✅ Books are already in the correct organized locations")
+
+            # Get new paths after organization
+            new_path_result = subprocess.run(
+                [BEETS_EXE, "ls", "-f", "$path", "ebook:true"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            _new_paths = [
+                p.strip()
+                for p in new_path_result.stdout.strip().split("\n")
+                if p.strip()
+            ]
+
+            print("✅ Organization complete! Books are now properly organized.")
+
+        except subprocess.CalledProcessError as e:
+            print(f"⚠️  Organization failed: {e}")
+            print("Continuing with workflow using current file locations...")
+
+    # Step 3: Import organized books to Calibre
+    calibre_imported = 0
+    organized_paths = []
+
+    if use_calibre:
+        print("\n📚 STEP 3: Import organized books to Calibre")
+        print("-" * 40)
+        print("Now importing the well-organized books from your beets library")
+        print("to Calibre. This creates clean copies with perfect metadata.")
+        print()
+
+        # Get current book paths from beets
+        try:
+            result = subprocess.run(
+                [BEETS_EXE, "ls", "-f", "$path", "ebook:true"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            organized_paths = [
+                p.strip() for p in result.stdout.strip().split("\n") if p.strip()
+            ]
+
+            if not organized_paths:
+                print("❌ No books found in beets library to import to Calibre")
+                return
+
+            print(f"Found {len(organized_paths)} organized books to import to Calibre")
+
+            response = input(
+                f"\nImport {len(organized_paths)} organized books to Calibre? (y/N): "
+            )
+            if response.lower() not in ["y", "yes"]:
+                print("Calibre import skipped.")
+                print("\n✅ Workflow complete! Books are organized in beets.")
+                return
+
+            print("\n🔄 Importing organized books to Calibre...")
+
+            for i, book_path in enumerate(organized_paths, 1):
+                if os.path.exists(book_path):
+                    filename = os.path.basename(book_path)
+                    print(f"[{i}/{len(organized_paths)}] Importing: {filename}")
+
+                    success, message = import_to_calibre(book_path, verbose=False)
+                    if success:
+                        calibre_imported += 1
+                        print("  ✅ Imported successfully")
+                    else:
+                        print(f"  ❌ Import failed: {message}")
+                else:
+                    print(f"[{i}/{len(organized_paths)}] File not found: {book_path}")
+
+            print(
+                f"\nCalibre import result: {calibre_imported}/{len(organized_paths)} successful"
+            )
+
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to get organized book paths: {e}")
+            return
+
+    # Final summary
+    print("\n" + "=" * 60)
+    print("🎉 ORGANIZE-FIRST WORKFLOW COMPLETE!")
+    print("=" * 60)
+    print(f"📥 Imported to beets: {beets_imported}/{len(ebooks)} books")
+    if use_calibre and organized_paths:
+        print(
+            f"📚 Imported to Calibre: {calibre_imported}/{len(organized_paths)} books"
+        )
+    print()
+    print("✨ Benefits achieved:")
+    print("  • Books are perfectly organized with beets metadata")
+    print("  • File names and folders follow consistent patterns")
+    if use_calibre:
+        print("  • Calibre has clean copies with excellent metadata")
+        print("  • No sync issues - Calibre imported pre-organized files")
+    print("  • Beets library is the master source of truth")
+    print("=" * 60)
+
+
+def check_calibre_integration_config() -> None:
+    """Check and display Calibre integration configuration options."""
+    print("🔧 Calibre Integration Configuration")
+    print("=" * 60)
+
+    from .core import enhanced_calibre_workflow_with_config
+
+    # Check current configuration
+    config_info = enhanced_calibre_workflow_with_config(
+        directory="", auto_discover_library=True  # Not used for configuration check
+    )
+
+    print("📋 Configuration Analysis:")
+    print(f"  • Calibre library: {config_info.get('calibre_library', 'Not found')}")
+    print(f"  • Library discovered: {config_info.get('library_discovered', False)}")
+    print(f"  • Workflow ready: {config_info.get('workflow_ready', False)}")
+
+    print("\n💡 Recommendations:")
+    config_data = config_info.get("configuration", {})
+    recommendations = config_data.get("recommendations", [])
+
+    for rec in recommendations:
+        print(f"  {rec}")
+
+    if not config_info.get("workflow_ready", False):
+        print("\n⚙️  Setup Steps:")
+        print("  1. Install Calibre from https://calibre-ebook.com/")
+        print("  2. Install beets and beets-ebooks plugin")
+        print("  3. Use 'ebook-manager organize-then-import' for best results")
+    else:
+        print("\n✅ Your system is ready for optimal beets/Calibre integration!")
+
+    print("\n" + "=" * 60)
+
+
+def calibre_takes_control_workflow_cli(
+    directory: str,
+    allowed_extensions: Optional[List[str]] = None,
+    onefile: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """
+    CLI wrapper for the Calibre-takes-control workflow.
+
+    This revolutionary workflow:
+    1. Imports books to both beets and Calibre
+    2. After Calibre import, updates beets database to point to Calibre-managed files
+    3. Deletes the original/beets copies, letting Calibre be the file manager
+
+    Benefits:
+    - Calibre becomes the single source of truth for file storage
+    - Beets retains all metadata and library functionality
+    - No sync issues since beets tracks Calibre's managed files
+    - Eliminates duplicate file storage
+    """
+    print("🚀 CALIBRE-TAKES-CONTROL WORKFLOW")
+    print("=" * 60)
+    print("This workflow revolutionizes ebook management by letting")
+    print("Calibre manage files while beets handles metadata.")
+    print()
+
+    # Check requirements
+    beets_available = os.path.exists(BEETS_EXE)
+    calibre_available = find_calibredb() is not None
+
+    if not beets_available:
+        print("❌ Beets not found! This workflow requires beets.")
+        print(f"Expected location: {BEETS_EXE}")
+        return
+
+    if not calibre_available:
+        print("❌ Calibre not found! This workflow requires Calibre.")
+        print("Download from: https://calibre-ebook.com/download")
+        return
+
+    print(f"✓ Found beets at: {BEETS_EXE}")
+    print(f"✓ Found Calibre at: {find_calibredb()}")
+    print()
+
+    # Find and filter ebooks
+    ebooks = find_ebooks(directory, allowed_extensions)
+
+    if onefile:
+        print(f"Found {len(ebooks)} total ebook(s) before filtering")
+        ebooks = filter_onefile_per_book(ebooks)
+        print(f"After one-file filtering: {len(ebooks)} ebook(s)")
+
+    if not ebooks:
+        print("No ebook files found.")
+        return
+
+    print(f"Found {len(ebooks)} ebook(s) to process")
+
+    if allowed_extensions:
+        print(f"Filtering by extensions: {allowed_extensions}")
+    if onefile:
+        print("One-file mode: selecting highest priority format per book")
+
+    # Explain the workflow
+    print("\n🔄 WORKFLOW STEPS:")
+    print("  1. Import each book to beets (for metadata extraction)")
+    print("  2. Import each book to Calibre (creates managed copy)")
+    print("  3. Update beets database to point to Calibre's managed file")
+    print("  4. Delete original file (beets now tracks Calibre's copy)")
+    print()
+    print("💡 RESULT: Calibre manages files, beets tracks them")
+    print()
+
+    if dry_run:
+        print("🧪 DRY RUN MODE: No files will be modified")
+
+    response = input(
+        f"Proceed with {'dry run of ' if dry_run else ''}Calibre-takes-control workflow? (y/N): "
+    )
+
+    if response.lower() not in ["y", "yes"]:
+        print("Workflow cancelled.")
+        return
+
+    print("\n" + "=" * 60)
+    print("🚀 STARTING CALIBRE-TAKES-CONTROL WORKFLOW")
+    print("=" * 60)
+
+    # Execute the workflow
+    stats = calibre_takes_control_workflow(
+        directory, allowed_extensions, onefile, dry_run
+    )
+
+    # Display results
+    print("\n" + "=" * 60)
+    print("📊 WORKFLOW RESULTS")
+    print("=" * 60)
+    print(f"📁 Total files processed: {stats['total_files']}")
+    print(f"📥 Imported to beets: {stats['beets_imported']}/{stats['total_files']}")
+    print(f"📚 Imported to Calibre: {stats['calibre_imported']}/{stats['total_files']}")
+    print(f"🔄 Database updates: {stats['database_updated']}/{stats['total_files']}")
+    print(f"🗑️  Files deleted: {stats['files_deleted']}/{stats['total_files']}")
+
+    if stats["errors"]:
+        print(f"\n⚠️  Errors encountered: {len(stats['errors'])}")
+        for error in stats["errors"][:5]:  # Show first 5 errors
+            print(f"  • {error}")
+        if len(stats["errors"]) > 5:
+            print(f"  ... and {len(stats['errors']) - 5} more")
+
+    # Success summary
+    successful = stats["database_updated"]
+    if successful > 0:
+        print("\n🎉 SUCCESS!")
+        print("=" * 60)
+        if not dry_run:
+            print(f"✨ {successful} books are now managed by Calibre!")
+            print("✨ Beets tracks Calibre's managed files!")
+            print("✨ No duplicate storage - maximum efficiency!")
+        else:
+            print(f"✨ Dry run successful - {successful} books would be processed!")
+        print()
+        print("🔥 BENEFITS ACHIEVED:")
+        print("  • Calibre is the file manager (single source of truth)")
+        print("  • Beets retains full metadata and search capabilities")
+        print("  • No sync issues - beets tracks Calibre's files")
+        print("  • Storage efficiency - no duplicate files")
+        print("  • Best of both tools combined!")
+    else:
+        print("\n❌ No books were successfully processed.")
+
+    print("=" * 60)
+
+
 def main() -> None:
     """Main function with argument parsing."""
     parser = argparse.ArgumentParser(
@@ -586,6 +1129,10 @@ Examples:
             "dual-import",
             "test-organize",
             "organize",
+            "sync-calibre",
+            "organize-then-import",
+            "calibre-takes-control",
+            "check-calibre-config",
         ],
         help="Command to execute",
     )
@@ -605,6 +1152,12 @@ Examples:
             "Import only one file per book "
             "(highest priority format: .epub > .mobi > .azw > .azw3 > .pdf > .lrf)"
         ),
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without making any changes (for calibre-takes-control workflow)",
     )
 
     # Handle legacy mode (if no arguments provided, show help)
@@ -634,8 +1187,16 @@ Examples:
         print(
             "  python ebook_manager.py dual-import <directory> [--ext .epub] [--onefile]"
         )
+        print(
+            "  python ebook_manager.py organize-then-import <directory> [--ext .epub] [--onefile]"
+        )
+        print(
+            "  python ebook_manager.py calibre-takes-control <directory> [--ext .epub] [--onefile]"
+        )
         print("  python ebook_manager.py test-organize")
         print("  python ebook_manager.py organize")
+        print("  python ebook_manager.py sync-calibre")
+        print("  python ebook_manager.py check-calibre-config")
         print("\nOptions:")
         print(
             "  --ext EXTENSIONS    Filter by file extensions "
@@ -657,10 +1218,20 @@ Examples:
             "  python ebook_manager.py calibre-import C:/Books/ --ext .epub --onefile"
         )
         print("  python ebook_manager.py dual-import C:/Books/ --ext .epub,.pdf")
+        print("  python ebook_manager.py organize-then-import C:/Books/ --ext .epub")
+        print("  python ebook_manager.py calibre-takes-control C:/Books/ --ext .epub")
+        print("\nRecommended Workflows:")
+        print(
+            "  organize-then-import   🌟 RECOMMENDED: Organize with beets first, then import to Calibre"
+        )
+        print(
+            "  calibre-takes-control  🚀 REVOLUTIONARY: Let Calibre manage files, beets tracks them"
+        )
         print("\nCalibre Commands:")
         print("  calibre-scan       Scan and import ebooks to Calibre library")
         print("  calibre-import     Import ebooks to Calibre library")
         print("  dual-import        Import to both beets and Calibre libraries")
+        print("  sync-calibre       Sync Calibre database with current beets library")
         print("\nOne-file priority order (highest to lowest):")
         print("  .epub > .mobi > .azw > .azw3 > .pdf > .lrf")
         return
@@ -673,6 +1244,7 @@ Examples:
     # Parse extensions
     allowed_extensions = parse_extensions(args.ext)
     onefile = getattr(args, "onefile", False)
+    dry_run = getattr(args, "dry_run", False)
 
     # Execute commands
     if args.command == "scan":
@@ -771,3 +1343,29 @@ Examples:
             print(f"Directory not found: {args.path}")
             return
         import_collection_dual(args.path, allowed_extensions, onefile)
+
+    elif args.command == "sync-calibre":
+        sync_calibre_database()
+
+    elif args.command == "organize-then-import":
+        if not args.path:
+            print("Error: organize-then-import command requires a directory path")
+            return
+        if not os.path.isdir(args.path):
+            print(f"Directory not found: {args.path}")
+            return
+        organize_then_import_workflow(args.path, allowed_extensions, onefile)
+
+    elif args.command == "calibre-takes-control":
+        if not args.path:
+            print("Error: calibre-takes-control command requires a directory path")
+            return
+        if not os.path.isdir(args.path):
+            print(f"Directory not found: {args.path}")
+            return
+        calibre_takes_control_workflow_cli(
+            args.path, allowed_extensions, onefile, dry_run
+        )
+
+    elif args.command == "check-calibre-config":
+        check_calibre_integration_config()

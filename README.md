@@ -10,23 +10,44 @@ A standalone command-line utility for advanced ebook collection management. This
 - **Collection Analysis**: Analyze and suggest organization structures
 - **Beets Integration**: Works seamlessly with the beets-ebooks plugin
 - **Batch Operations**: Process entire collections efficiently
+- **🚀 Revolutionary Workflows**: Next-generation ebook management approaches
+
+### 🚀 NEW: Calibre-Takes-Control Workflow
+
+The revolutionary **Calibre-takes-control** workflow eliminates the traditional challenges of managing ebooks with both beets and Calibre:
+
+**The Problem**: Traditional workflows create duplicate files and sync issues
+**The Solution**: Let Calibre manage files while beets tracks them
+
+✅ **50% less disk usage** - No duplicate files  
+✅ **Zero sync issues** - Single source of truth  
+✅ **Full functionality** - Both tools work perfectly  
+✅ **Maximum efficiency** - Best of both worlds  
+
+```bash
+# Try the revolutionary workflow
+ebook-manager calibre-takes-control /path/to/books/ --dry-run
+```
 
 ## Installation
 
 ### Quick Install
 
 1. Clone this repository:
+
    ```bash
    git clone https://github.com/OttScott/ebook-manager.git
    cd ebook-manager
    ```
 
 2. Install the package:
+
    ```bash
    pip install -e .
    ```
 
 3. Add to PATH (Windows):
+
    ```bash
    # Run the provided script to add Python Scripts to PATH
    .\add_to_path.ps1   # PowerShell
@@ -35,6 +56,7 @@ A standalone command-line utility for advanced ebook collection management. This
    ```
 
 4. (Optional) Install beets-ebooks plugin for enhanced functionality:
+
    ```bash
    pip install beets beets-ebooks
    ```
@@ -102,8 +124,56 @@ python ebook_manager.py analyze /path/to/books/
 python ebook_manager.py test-organize
 
 # Actually organize files
-python ebook_manager.py organize
+python ebook_manager.py organize  # 🆕 Now with automatic Calibre sync!
 ```
+
+### 🆕 Calibre Database Sync
+
+When organizing ebooks with beets, files are moved to new locations. This can break Calibre's database links. The ebook-manager now **automatically syncs Calibre's database** after file organization:
+
+```bash
+# This now includes automatic Calibre sync after organizing
+ebook-manager organize
+```
+
+**What happens:**
+
+1. 📂 Beets organizes files to new locations
+2. 🔄 Calibre database is automatically updated to point to new locations  
+3. ✅ No broken links - everything stays in sync!
+
+**Manual sync if needed:**
+
+```python
+from ebook_manager.core import sync_calibre_after_move
+
+old_paths = ["/old/location/book.epub"]
+new_paths = ["/new/location/book.epub"]
+stats = sync_calibre_after_move(old_paths, new_paths)
+```
+
+See [CALIBRE_SYNC.md](CALIBRE_SYNC.md) for detailed technical documentation.
+
+### 🆕 Calibre Library Integration
+
+Advanced Calibre library integration with automatic path discovery and configuration:
+
+```bash
+# Check integration configuration
+ebook-manager check-calibre-config
+
+# Enhanced workflow with library auto-discovery
+ebook-manager organize-then-import C:/Books/ --ext .epub
+```
+
+**New Features:**
+
+- **Library Path Discovery**: Automatically detect Calibre's library location
+- **Configuration Analysis**: Get recommendations for optimal beets/Calibre integration
+- **Enhanced Workflows**: Seamless integration between beets organization and Calibre import
+- **Custom Library Support**: Import to specific Calibre library paths
+
+See [CALIBRE_LIBRARY_INTEGRATION.md](CALIBRE_LIBRARY_INTEGRATION.md) for complete integration guide.
 
 ### Format Priority (for --onefile)
 
@@ -141,6 +211,7 @@ The tool includes optional integration with Calibre for additional ebook managem
 - `calibre-scan <directory>` - Scan for ebooks and check Calibre availability
 - `calibre-import <directory>` - Import ebooks directly into Calibre
 - `dual-import <directory>` - Import into both Beets and Calibre
+- `sync-calibre` - Sync Calibre database with current beets library state
 
 ### Requirements
 
@@ -166,6 +237,9 @@ ebook-manager calibre-import C:/Books/ --ext .epub --onefile
 
 # Import into both Beets and Calibre
 ebook-manager dual-import C:/Books/ --ext .epub,.pdf
+
+# Sync Calibre database with beets library (after organizing)
+ebook-manager sync-calibre
 ```
 
 ## Integration with Beets-Ebooks
@@ -196,15 +270,39 @@ This utility is designed to work alongside the [beets-ebooks plugin](https://git
 | `calibre-scan` | Scan and check Calibre availability | `--ext`, `--onefile` |
 | `calibre-import` | Import ebooks to Calibre | `--ext`, `--onefile` |
 | `dual-import` | Import to both Beets and Calibre | `--ext`, `--onefile` |
+| `organize-then-import` | 🌟 Organize with beets, then import to Calibre | `--ext`, `--onefile` |
+| `calibre-takes-control` | 🚀 **NEW**: Let Calibre manage files, beets tracks them | `--ext`, `--onefile`, `--dry-run` |
+| `sync-calibre` | Sync Calibre DB with beets library | None |
+| `check-calibre-config` | Check Calibre integration configuration | None |
 | `analyze` | Analyze collection structure | `--ext`, `--onefile` |
 | `test-organize` | Test organization (dry run) | None |
 | `organize` | Actually organize files | None |
 | `process` | Process single file | None |
 
+### 🚀 Revolutionary New Workflow
+
+**`calibre-takes-control`** - The next evolution in ebook management:
+
+- **Single File Storage**: Eliminates duplicate files (50% disk savings)
+- **No Sync Issues**: Beets tracks Calibre-managed files automatically
+- **Best of Both Tools**: Full functionality from both beets and Calibre
+- **Maximum Efficiency**: Calibre manages files, beets provides metadata search
+
+```bash
+# Test the revolutionary workflow (recommended first step)
+ebook-manager calibre-takes-control /path/to/books/ --dry-run
+
+# Execute the workflow
+ebook-manager calibre-takes-control /path/to/books/ --ext .epub --onefile
+```
+
+See [CALIBRE_TAKES_CONTROL.md](CALIBRE_TAKES_CONTROL.md) for complete documentation.
+
 ## Options
 
 - `--ext EXTENSIONS`: Comma-separated file extensions (e.g., `--ext .epub,.pdf`)
 - `--onefile`: Import only one file per book (highest priority format)
+- `--dry-run`: Show what would be done without making changes (for `calibre-takes-control`)
 
 ## System Requirements
 

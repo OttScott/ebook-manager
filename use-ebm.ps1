@@ -2,16 +2,16 @@
 # This script allows you to use ebook-manager commands immediately without PATH setup
 
 param(
-    [Parameter(Position=0, Mandatory=$false)]
+    [Parameter(Position = 0, Mandatory = $false)]
     [string]$Command,
     
-    [Parameter(Position=1, Mandatory=$false)]
+    [Parameter(Position = 1, Mandatory = $false)]
     [string]$Path,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$Ext,
     
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$OneFile
 )
 
@@ -33,14 +33,16 @@ try {
             if (Test-Path $path) {
                 $pythonCmd = $path
                 break
-            } elseif ($path -like "*python*") {
+            }
+            elseif ($path -like "*python*") {
                 $null = & $path --version 2>&1
                 if ($LASTEXITCODE -eq 0) {
                     $pythonCmd = $path
                     break
                 }
             }
-        } catch {
+        }
+        catch {
             continue
         }
     }
@@ -86,6 +88,7 @@ try {
     Write-Host "Running: ebm $($cmdArgs -join ' ')" -ForegroundColor Green
     & $ebmExe @cmdArgs
     
-} catch {
+}
+catch {
     Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
 }

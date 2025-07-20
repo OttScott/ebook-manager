@@ -15,6 +15,7 @@ There are several ways to install and use the ebook-manager utility:
 ### Method 1: Install from Source (Recommended for Development)
 
 1. **Clone and install in editable mode:**
+
    ```bash
    git clone https://github.com/OttScott/ebook-manager.git
    cd ebook-manager
@@ -22,6 +23,7 @@ There are several ways to install and use the ebook-manager utility:
    ```
 
 2. **After installation, you can use any of these commands:**
+
    ```bash
    # Full command name
    ebook-manager scan C:/Books/
@@ -42,11 +44,13 @@ pip install ebook-manager
 ### Method 3: Install from Wheel
 
 1. **Build the package:**
+
    ```bash
    python -m build
    ```
 
 2. **Install the wheel:**
+
    ```bash
    pip install dist/ebook_manager-*.whl
    ```
@@ -67,14 +71,17 @@ python -c "import ebook_manager; print(ebook_manager.__version__)"
 ## Dependencies
 
 ### Required Dependencies
+
 - Python >= 3.7
 - pathlib2 (for Python < 3.4)
 
 ### Optional Dependencies (for enhanced functionality)
+
 - beets >= 1.6.0
 - beets-ebooks plugin
 
 ### Development Dependencies
+
 - pytest >= 6.0
 - flake8
 - black
@@ -84,6 +91,7 @@ python -c "import ebook_manager; print(ebook_manager.__version__)"
 ## Configuration
 
 1. **Update the beets executable path** in the installed package or set an environment variable:
+
    ```python
    # Option 1: Edit the BEETS_EXE variable in the installed package
    # Option 2: Set environment variable
@@ -91,6 +99,7 @@ python -c "import ebook_manager; print(ebook_manager.__version__)"
    ```
 
 2. **For Windows users**, make sure your Python Scripts directory is in your PATH:
+
    ```
    C:\Users\YourName\AppData\Roaming\Python\Python3XX\Scripts\
    ```
@@ -118,12 +127,14 @@ ebm test-organize
 If you have multiple Python installations and the commands are not found:
 
 1. **Check which Python was used for installation:**
+
    ```bash
    python --version
    pip show ebook-manager
    ```
 
 2. **Use the specific Python version:**
+
    ```bash
    python3.13 -m pip install -e .
    # or
@@ -135,17 +146,20 @@ If you have multiple Python installations and the commands are not found:
    - Python 3.11: `F:\ottsc\AppData\Roaming\Python\Python311\Scripts\`
 
 4. **Windows users can use the PATH setup scripts:**
+
    ```powershell
    # Run from the project directory
    .\add_to_path.ps1
    ```
 
 ### Command not found
+
 - Ensure Python Scripts directory is in your PATH
 - Try using `python -m ebook_manager` instead
 - Reinstall with `pip install -e .`
 
 ### Beets executable not found
+
 - Update `BEETS_EXE` path in the configuration
 - Install beets: `pip install beets`
 - Install beets-ebooks plugin: `pip install beets-ebooks`
