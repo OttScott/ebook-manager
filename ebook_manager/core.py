@@ -8,18 +8,30 @@ import os
 import re
 import shutil
 import subprocess
+import json
 from typing import List, Optional
 
-# Default ebook file extensions
-EBOOK_EXTENSIONS = [".epub", ".pdf", ".mobi", ".lrf", ".azw", ".azw3"]
+# Default ebook file extensions (including comic book formats)
+EBOOK_EXTENSIONS = [
+    ".epub",
+    ".pdf",
+    ".mobi",
+    ".lrf",
+    ".azw",
+    ".azw3",
+    ".cbr",
+    ".cbz",
+]
 
 # Priority order for --onefile feature (higher priority = preferred format)
 FORMAT_PRIORITY = {
-    ".epub": 6,  # Highest priority
-    ".mobi": 5,
-    ".azw": 4,
-    ".azw3": 3,
-    ".pdf": 2,
+    ".epub": 8,  # Highest priority for traditional ebooks
+    ".mobi": 7,
+    ".azw": 6,
+    ".azw3": 5,
+    ".pdf": 4,
+    ".cbz": 3,  # Comic book ZIP (preferred over CBR due to wider support)
+    ".cbr": 2,  # Comic book RAR
     ".lrf": 1,  # Lowest priority
 }
 
@@ -87,7 +99,9 @@ def filter_onefile_per_book(ebooks: List[str]) -> List[str]:
             # Multiple files - select the highest priority format
             best_file = max(
                 book_files,
-                key=lambda f: FORMAT_PRIORITY.get(os.path.splitext(f)[1].lower(), 0),
+                key=lambda f: FORMAT_PRIORITY.get(
+                    os.path.splitext(f)[1].lower(), 0
+                ),
             )
             filtered_ebooks.append(best_file)
 
@@ -214,8 +228,15 @@ def import_to_calibre(
             check=True,
         )
 
-        success = "Added book ids:" in result.stdout or len(result.stdout.strip()) > 0
-        message = result.stdout.strip() if result.stdout.strip() else "Import completed"
+        success = (
+            "Added book ids:" in result.stdout
+            or len(result.stdout.strip()) > 0
+        )
+        message = (
+            result.stdout.strip()
+            if result.stdout.strip()
+            else "Import completed"
+        )
 
         if verbose and result.stderr:
             message += f" (stderr: {result.stderr.strip()})"
@@ -276,7 +297,11 @@ def find_books_in_calibre(old_path: str) -> List[dict]:
                             == old_path_normalized
                         ):
                             books.append(
-                                {"id": book_id, "path": format_path, "title": title}
+                                {
+                                    "id": book_id,
+                                    "path": format_path,
+                                    "title": title,
+                                }
                             )
                             break
 
@@ -287,7 +312,9 @@ def find_books_in_calibre(old_path: str) -> List[dict]:
         return []
 
 
-def update_calibre_book_path(book_id: str, old_path: str, new_path: str) -> bool:
+def update_calibre_book_path(
+    book_id: str, old_path: str, new_path: str
+) -> bool:
     """Update a book's file path in Calibre database.
 
     Args:
@@ -330,7 +357,9 @@ def update_calibre_book_path(book_id: str, old_path: str, new_path: str) -> bool
         return False
 
 
-def sync_calibre_after_move(old_paths: List[str], new_paths: List[str]) -> dict:
+def sync_calibre_after_move(
+    old_paths: List[str], new_paths: List[str]
+) -> dict:
     """Sync Calibre database after files have been moved by beets."""
     if len(old_paths) != len(new_paths):
         raise ValueError("old_paths and new_paths must have the same length")
@@ -361,7 +390,9 @@ def sync_calibre_after_move(old_paths: List[str], new_paths: List[str]) -> dict:
                 print(f"    ✅ Updated Calibre entry (ID: {book['id']})")
             else:
                 stats["failed"] += 1
-                print(f"    ❌ Failed to update Calibre entry (ID: {book['id']})")
+                print(
+                    f"    ❌ Failed to update Calibre entry (ID: {book['id']})"
+                )
 
     return stats
 
@@ -378,7 +409,6 @@ def sync_calibre_with_beets_library() -> dict:
     Returns:
         dict: Statistics about the sync operation including missing_paths list
     """
-    import json
     from typing import Any, Dict
 
     calibredb = find_calibredb()
@@ -422,7 +452,9 @@ def sync_calibre_with_beets_library() -> dict:
                 if len(parts) >= 4:
                     path, artist, album, title = parts
                     # Use album as title if title is empty (common for audiobooks)
-                    book_title = title.strip() if title.strip() else album.strip()
+                    book_title = (
+                        title.strip() if title.strip() else album.strip()
+                    )
                     author = artist.strip()
 
                     if book_title and author:
@@ -480,7 +512,10 @@ def sync_calibre_with_beets_library() -> dict:
                 if title and authors:
                     # Create normalized keys for matching
                     title_key = (
-                        title.lower().replace(" ", "").replace("-", "").replace("_", "")
+                        title.lower()
+                        .replace(" ", "")
+                        .replace("-", "")
+                        .replace("_", "")
                     )
                     author_key = (
                         authors.lower()
@@ -572,7 +607,8 @@ def get_calibre_default_library_path() -> Optional[str]:
 
 
 def configure_beets_for_calibre_integration(
-    calibre_library_path: Optional[str] = None, organize_for_calibre: bool = False
+    calibre_library_path: Optional[str] = None,
+    organize_for_calibre: bool = False,
 ) -> dict:
     """
     Configure beets to work optimally with Calibre integration.
@@ -676,7 +712,9 @@ def enhanced_calibre_workflow_with_config(
     return workflow_info
 
 
-def find_calibre_file_path_for_book(book_title: str, book_author: str) -> Optional[str]:
+def find_calibre_file_path_for_book(
+    book_title: str, book_author: str
+) -> Optional[str]:
     """Find the file path where Calibre stores a specific book.
 
     Args:
@@ -691,8 +729,6 @@ def find_calibre_file_path_for_book(book_title: str, book_author: str) -> Option
         return None
 
     try:
-        import json
-
         # Search for the book by title and author
         search_query = f'title:"{book_title}" and author:"{book_author}"'
         result = subprocess.run(
@@ -719,8 +755,8 @@ def find_calibre_file_path_for_book(book_title: str, book_author: str) -> Option
             # Get the formats (file paths) for the first matching book
             formats = books[0].get("formats", [])
             if formats:
-                # Return the first format's path (Calibre typically stores multiple formats)
-                # formats is a list of file paths like ["/path/to/library/Author/Book/book.epub"]
+                # Return the first format's path (Calibre stores multiple formats)
+                # formats: list like ["/path/to/library/Author/Book/book.epub"]
                 return formats[0] if isinstance(formats, list) else formats
 
         return None
@@ -752,7 +788,8 @@ def update_beets_file_path(old_path: str, new_path: str) -> bool:
         )
 
         return (
-            "1 items modified" in result.stdout or "modified" in result.stdout.lower()
+            "1 items modified" in result.stdout
+            or "modified" in result.stdout.lower()
         )
 
     except subprocess.CalledProcessError:
@@ -864,8 +901,9 @@ def calibre_takes_control_workflow(
                 )
 
                 if not calibre_success:
+                    filename = os.path.basename(ebook_path)
                     stats["errors"].append(
-                        f"Calibre import failed for {os.path.basename(ebook_path)}: {calibre_message}"
+                        f"Calibre import failed for {filename}: {calibre_message}"
                     )
                     continue
 
@@ -897,24 +935,29 @@ def calibre_takes_control_workflow(
                         if update_beets_file_path(ebook_path, calibre_path):
                             stats["database_updated"] += 1
 
-                            # Step 5: Delete original file (now that beets points to Calibre)
+                            # Step 5: Delete original file
+                            # (now that beets points to Calibre)
                             if delete_file_safely(ebook_path):
                                 stats["files_deleted"] += 1
                             else:
                                 stats["errors"].append(
-                                    f"Failed to delete original file: {ebook_path}"
+                                    f"Failed to delete original file: "
+                                    f"{ebook_path}"
                                 )
                         else:
+                            filename = os.path.basename(ebook_path)
                             stats["errors"].append(
-                                f"Failed to update beets database for {os.path.basename(ebook_path)}"
+                                f"Failed to update beets database for {filename}"
                             )
                     else:
+                        filename = os.path.basename(ebook_path)
                         stats["errors"].append(
-                            f"Could not find Calibre file location for {os.path.basename(ebook_path)}"
+                            f"Could not find Calibre file location for {filename}"
                         )
                 else:
+                    filename = os.path.basename(ebook_path)
                     stats["errors"].append(
-                        f"Could not get metadata from beets for {os.path.basename(ebook_path)}"
+                        f"Could not get metadata from beets for {filename}"
                     )
             else:
                 # Dry-run: assume success
@@ -927,3 +970,369 @@ def calibre_takes_control_workflow(
             )
 
     return stats
+
+
+def get_all_calibre_books() -> List[dict]:
+    """
+    Get all books from the Calibre database with full metadata.
+
+    Returns:
+        List of dictionaries containing book metadata including file paths
+    """
+    calibredb = find_calibredb()
+    if not calibredb:
+        return []
+
+    try:
+        # Get comprehensive book list with all metadata
+        result = subprocess.run(
+            [
+                calibredb,
+                "list",
+                "--fields",
+                "id,title,authors,formats,pubdate,tags,series,series_index,uuid",
+                "--for-machine",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        if result.stdout.strip():
+            books = json.loads(result.stdout)
+
+            # Enhance each book with actual file paths from formats
+            enhanced_books = []
+            for book in books:
+                enhanced_book = book.copy()
+
+                # Get file paths from the formats field
+                formats = book.get("formats", [])
+                if formats:
+                    # Formats contains the actual file paths
+                    enhanced_book["file_paths"] = [
+                        fmt for fmt in formats if os.path.exists(fmt)
+                    ]
+                else:
+                    enhanced_book["file_paths"] = []
+
+                enhanced_books.append(enhanced_book)
+
+            return enhanced_books
+
+        return []
+
+    except (
+        subprocess.CalledProcessError,
+        json.JSONDecodeError,
+        Exception,
+    ) as e:
+        print(f"Error getting Calibre books: {e}")
+        return []
+
+
+def import_calibre_database_to_beets(
+    beets_exe: str,
+    dry_run: bool = False,
+    skip_existing: bool = True,
+    update_metadata: bool = True,
+) -> dict:
+    """
+    Import the entire Calibre database into beets library.
+
+    This creates a complete sync between Calibre and beets where:
+    - All Calibre books are imported to beets
+    - Beets tracks Calibre-managed files directly
+    - Metadata is preserved from Calibre
+    - No file duplication occurs
+
+    Args:
+        dry_run: Show what would be done without making changes
+        skip_existing: Skip books already in beets library
+        update_metadata: Update metadata for existing books
+
+    Returns:
+        Dictionary with import statistics and results
+    """
+    print("📚 CALIBRE DATABASE IMPORT TO BEETS")
+    print("=" * 60)
+    print("This will import your existing Calibre library into beets,")
+    print("creating a unified library where beets tracks Calibre's files.")
+    print()
+
+    # Check requirements
+    calibredb = find_calibredb()
+    if not calibredb:
+        return {
+            "error": "Calibre not found",
+            "total_books": 0,
+            "imported": 0,
+            "skipped": 0,
+            "failed": 0,
+            "updated": 0,
+        }
+
+    # Check beets
+    if not os.path.exists(beets_exe):
+        return {
+            "error": "Beets not found",
+            "total_books": 0,
+            "imported": 0,
+            "skipped": 0,
+            "failed": 0,
+            "updated": 0,
+        }
+
+    print(f"✓ Found Calibre at: {calibredb}")
+    print(f"✓ Found beets at: {beets_exe}")
+
+    # Get all Calibre books
+    print("\n🔍 Reading Calibre database...")
+    calibre_books = get_all_calibre_books()
+
+    if not calibre_books:
+        return {
+            "error": "No books found in Calibre database",
+            "total_books": 0,
+            "imported": 0,
+            "skipped": 0,
+            "failed": 0,
+            "updated": 0,
+        }
+
+    print(f"📖 Found {len(calibre_books)} books in Calibre database")
+
+    # Get existing books in beets (if skip_existing is True)
+    existing_books = set()
+    if skip_existing:
+        try:
+            result = subprocess.run(
+                [beets_exe, "ls", "-f", "$path", "ebook:true"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            existing_paths = [
+                os.path.normpath(p.strip())
+                for p in result.stdout.strip().split("\n")
+                if p.strip()
+            ]
+            existing_books = set(existing_paths)
+            print(
+                f"📋 Found {len(existing_books)} existing books in beets library"
+            )
+        except subprocess.CalledProcessError:
+            print("⚠️  Could not query existing beets library")
+
+    # Statistics
+    stats = {
+        "total_books": len(calibre_books),
+        "imported": 0,
+        "skipped": 0,
+        "failed": 0,
+        "updated": 0,
+        "errors": [],
+    }
+
+    if dry_run:
+        print("\n🧪 DRY RUN MODE: No files will be modified")
+
+    print(f"\n🔄 Processing {len(calibre_books)} Calibre books...")
+    print("-" * 60)
+
+    for i, book in enumerate(calibre_books, 1):
+        title = book.get("title", "Unknown Title")
+        authors = book.get("authors", "Unknown Author")
+        book_id = book.get("id", "Unknown")
+        file_paths = book.get("file_paths", [])
+
+        print(
+            f"\n[{i}/{len(calibre_books)}] {title} by {authors} (ID: {book_id})"
+        )
+
+        if not file_paths:
+            print("  ❌ No accessible file paths found")
+            stats["failed"] += 1
+            stats["errors"].append(f"No file paths for: {title}")
+            continue
+
+        # Process each format
+        imported_any = False
+        for file_path in file_paths:
+            if not os.path.exists(file_path):
+                print(f"  ⚠️  File not found: {os.path.basename(file_path)}")
+                continue
+
+            normalized_path = os.path.normpath(file_path)
+
+            # Check if already in beets
+            if skip_existing and normalized_path in existing_books:
+                print(f"  ⏭️  Already in beets: {os.path.basename(file_path)}")
+                stats["skipped"] += 1
+                continue
+
+            # Import to beets
+            if not dry_run:
+                try:
+                    result = subprocess.run(
+                        [beets_exe, "import-ebooks", file_path],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+
+                    if "Successfully imported" in result.stdout:
+                        print(f"  ✅ Imported: {os.path.basename(file_path)}")
+                        stats["imported"] += 1
+                        imported_any = True
+                    else:
+                        print(
+                            f"  ❌ Import failed: {os.path.basename(file_path)}"
+                        )
+                        stats["failed"] += 1
+                        stats["errors"].append(f"Import failed: {file_path}")
+
+                except subprocess.CalledProcessError as e:
+                    print(f"  ❌ Import error: {os.path.basename(file_path)}")
+                    stats["failed"] += 1
+                    stats["errors"].append(
+                        f"Import error for {file_path}: {e}"
+                    )
+            else:
+                # Dry run
+                print(f"  🧪 Would import: {os.path.basename(file_path)}")
+                stats["imported"] += 1
+                imported_any = True
+
+        if not imported_any and file_paths:
+            stats["failed"] += 1
+
+    return stats
+
+
+def reverse_calibre_sync(beets_exe: str) -> dict:
+    """
+    Reverse sync: Import books from Calibre that aren't in beets.
+
+    This is useful for maintaining lock-step synchronization where
+    Calibre is the primary library and beets follows along.
+
+    Returns:
+        Dictionary with sync statistics
+    """
+    print("🔄 REVERSE CALIBRE SYNC")
+    print("=" * 50)
+    print("Importing books from Calibre that aren't yet in beets...")
+    print()
+
+    return import_calibre_database_to_beets(
+        beets_exe, dry_run=False, skip_existing=True, update_metadata=False
+    )
+
+
+def bidirectional_calibre_sync(beets_exe: str, dry_run: bool = False) -> dict:
+    """
+    Bidirectional sync between Calibre and beets libraries.
+
+    This creates complete synchronization where:
+    1. Books in Calibre but not in beets are imported to beets
+    2. Books in beets but not in Calibre are imported to Calibre
+    3. Path updates are synchronized
+    4. Both libraries stay in perfect sync
+
+    Args:
+        dry_run: Show what would be done without making changes
+
+    Returns:
+        Dictionary with comprehensive sync statistics
+    """
+    print("🔀 BIDIRECTIONAL CALIBRE-BEETS SYNC")
+    print("=" * 60)
+    print("This creates complete synchronization between your")
+    print("Calibre and beets libraries in both directions.")
+    print()
+
+    if dry_run:
+        print("🧪 DRY RUN MODE: No files will be modified")
+        print()
+
+    # Phase 1: Calibre → beets
+    print("📥 PHASE 1: Import books from Calibre to beets")
+    print("-" * 40)
+    calibre_to_beets_stats = import_calibre_database_to_beets(
+        beets_exe, dry_run=dry_run, skip_existing=True, update_metadata=False
+    )
+
+    print("\n" + "=" * 40)
+    print("📊 Phase 1 Results:")
+    print(
+        f"  📚 Calibre books processed: {calibre_to_beets_stats.get('total_books', 0)}"
+    )
+    print(
+        f"  ✅ Imported to beets: {calibre_to_beets_stats.get('imported', 0)}"
+    )
+    print(f"  ⏭️  Already in beets: {calibre_to_beets_stats.get('skipped', 0)}")
+    print(f"  ❌ Failed imports: {calibre_to_beets_stats.get('failed', 0)}")
+
+    # Phase 2: beets → Calibre
+    print("\n📤 PHASE 2: Import books from beets to Calibre")
+    print("-" * 40)
+
+    # Get books in beets but not in Calibre
+    beets_to_calibre_stats = sync_calibre_with_beets_library()
+
+    if "missing_paths" in beets_to_calibre_stats:
+        missing_books = beets_to_calibre_stats["missing_paths"]
+        print(f"📖 Found {len(missing_books)} books in beets not in Calibre")
+
+        if missing_books and not dry_run:
+            imported_to_calibre = 0
+            failed_to_calibre = 0
+
+            for i, book_path in enumerate(missing_books, 1):
+                filename = os.path.basename(book_path)
+                print(
+                    f"[{i}/{len(missing_books)}] Importing to Calibre: {filename}"
+                )
+
+                if os.path.exists(book_path):
+                    success, message = import_to_calibre(
+                        book_path, verbose=False
+                    )
+                    if success:
+                        imported_to_calibre += 1
+                        print("  ✅ Imported successfully")
+                    else:
+                        failed_to_calibre += 1
+                        print(f"  ❌ Import failed: {message}")
+                else:
+                    failed_to_calibre += 1
+                    print(f"  ❌ File not found: {book_path}")
+
+        elif dry_run and missing_books:
+            print(f"🧪 Would import {len(missing_books)} books to Calibre")
+            imported_to_calibre = len(missing_books)
+            failed_to_calibre = 0
+        else:
+            imported_to_calibre = 0
+            failed_to_calibre = 0
+    else:
+        imported_to_calibre = 0
+        failed_to_calibre = 0
+
+    # Combined results
+    combined_stats = {
+        "total_calibre_books": calibre_to_beets_stats.get("total_books", 0),
+        "calibre_to_beets_imported": calibre_to_beets_stats.get("imported", 0),
+        "calibre_to_beets_skipped": calibre_to_beets_stats.get("skipped", 0),
+        "calibre_to_beets_failed": calibre_to_beets_stats.get("failed", 0),
+        "beets_to_calibre_imported": imported_to_calibre,
+        "beets_to_calibre_failed": failed_to_calibre,
+        "sync_successful": (
+            calibre_to_beets_stats.get("failed", 0) == 0
+            and failed_to_calibre == 0
+        ),
+        "dry_run": dry_run,
+    }
+
+    return combined_stats

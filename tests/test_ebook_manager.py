@@ -18,6 +18,9 @@ from ebook_manager.__main__ import (
     process_ebook_with_beets,
     scan_collection,
     scan_collection_calibre,
+    import_from_calibre_database,
+    bidirectional_sync_workflow,
+    reverse_sync_workflow,
 )
 from ebook_manager.core import (
     FORMAT_PRIORITY,
@@ -32,6 +35,10 @@ from ebook_manager.core import (
     sync_calibre_after_move,
     sync_calibre_with_beets_library,
     update_calibre_book_path,
+    get_all_calibre_books,
+    import_calibre_database_to_beets,
+    reverse_calibre_sync,
+    bidirectional_calibre_sync,
 )
 
 
@@ -246,7 +253,9 @@ class TestEbookManager(unittest.TestCase):
         # Mock finding 2 EPUB files
         mock_find.return_value = ["book1.epub", "book2.epub"]
 
-        with patch("ebook_manager.__main__.process_ebook_with_beets") as mock_process:
+        with patch(
+            "ebook_manager.__main__.process_ebook_with_beets"
+        ) as mock_process:
             mock_process.return_value = "Processed successfully"
             scan_collection(self.test_dir, [".epub"])
 
@@ -254,21 +263,30 @@ class TestEbookManager(unittest.TestCase):
         mock_find.assert_called_once_with(self.test_dir, [".epub"])
 
         # Check that filtering message was printed
-        print_calls = [call_obj.args[0] for call_obj in mock_print.call_args_list]
+        print_calls = [
+            call_obj.args[0] for call_obj in mock_print.call_args_list
+        ]
         self.assertTrue(
-            any("Filtering by extensions: [" in call_text for call_text in print_calls)
+            any(
+                "Filtering by extensions: [" in call_text
+                for call_text in print_calls
+            )
         )
 
     @patch("ebook_manager.__main__.find_ebooks")
     @patch("builtins.input")
     @patch("builtins.print")
-    def test_import_collection_with_filtering(self, mock_print, mock_input, mock_find):
+    def test_import_collection_with_filtering(
+        self, mock_print, mock_input, mock_find
+    ):
         """Test collection import with extension filtering."""
         # Mock user input and found files
         mock_input.return_value = "y"
         mock_find.return_value = ["book1.epub", "book2.epub"]
 
-        with patch("ebook_manager.__main__.import_ebook_to_beets") as mock_import:
+        with patch(
+            "ebook_manager.__main__.import_ebook_to_beets"
+        ) as mock_import:
             mock_import.return_value = "Successfully imported ebook"
             import_collection(self.test_dir, [".epub"])
 
@@ -281,7 +299,9 @@ class TestEbookManager(unittest.TestCase):
     @patch("ebook_manager.__main__.find_ebooks")
     @patch("builtins.input")
     @patch("subprocess.run")
-    def test_batch_import_with_filtering(self, mock_run, mock_input, mock_find):
+    def test_batch_import_with_filtering(
+        self, mock_run, mock_input, mock_find
+    ):
         """Test batch import with extension filtering uses individual imports."""
         # Mock user input and found files
         mock_input.return_value = "y"
@@ -307,7 +327,9 @@ class TestEbookManager(unittest.TestCase):
     @patch("ebook_manager.__main__.find_ebooks")
     @patch("builtins.input")
     @patch("subprocess.run")
-    def test_batch_import_without_filtering(self, mock_run, mock_input, mock_find):
+    def test_batch_import_without_filtering(
+        self, mock_run, mock_input, mock_find
+    ):
         """Test batch import without filtering uses directory import."""
         # Mock user input and found files
         mock_input.return_value = "y"
@@ -398,7 +420,10 @@ class TestEbookManager(unittest.TestCase):
                 "J.R.R. Tolkien - The Lord of the Rings (1).pdf",
                 "j.r.r. tolkien - the lord of the rings",
             ),
-            ("Isaac Asimov - Foundation [2005].mobi", "isaac asimov - foundation"),
+            (
+                "Isaac Asimov - Foundation [2005].mobi",
+                "isaac asimov - foundation",
+            ),
             ("Terry Pratchett - Discworld.azw", "terry pratchett - discworld"),
             ("single_word_title.epub", "single_word_title"),  # Fallback case
         ]
@@ -456,7 +481,14 @@ class TestEbookManager(unittest.TestCase):
 
     def test_format_priority(self):
         """Test that format priority is applied correctly."""
-        formats_by_priority = [".epub", ".mobi", ".azw", ".azw3", ".pdf", ".lrf"]
+        formats_by_priority = [
+            ".epub",
+            ".mobi",
+            ".azw",
+            ".azw3",
+            ".pdf",
+            ".lrf",
+        ]
 
         for i, format1 in enumerate(formats_by_priority):
             for j, format2 in enumerate(formats_by_priority):
@@ -468,6 +500,61 @@ class TestEbookManager(unittest.TestCase):
                         priority2,
                         f"{format1} should have higher priority than {format2}",
                     )
+
+    def test_comic_book_format_support(self):
+        """Test CBR and CBZ comic book format support."""
+        # Test CBR files
+        self.assertTrue(is_ebook_file("comic.cbr"))
+        self.assertTrue(is_ebook_file("COMIC.CBR"))  # Case insensitive
+
+        # Test CBZ files
+        self.assertTrue(is_ebook_file("comic.cbz"))
+        self.assertTrue(is_ebook_file("COMIC.CBZ"))  # Case insensitive
+
+        # Test with allowed extensions including comics
+        comic_extensions = [".epub", ".cbr", ".cbz"]
+        self.assertTrue(is_ebook_file("book.epub", comic_extensions))
+        self.assertTrue(is_ebook_file("comic.cbr", comic_extensions))
+        self.assertTrue(is_ebook_file("comic.cbz", comic_extensions))
+        self.assertFalse(is_ebook_file("book.pdf", comic_extensions))
+
+    def test_comic_book_format_priority(self):
+        """Test that comic book formats have correct priority in onefile mode."""
+        from ebook_manager.core import FORMAT_PRIORITY
+
+        # CBZ should have higher priority than CBR
+        self.assertGreater(FORMAT_PRIORITY[".cbz"], FORMAT_PRIORITY[".cbr"])
+
+        # Traditional ebook formats should have higher priority than comics
+        self.assertGreater(FORMAT_PRIORITY[".epub"], FORMAT_PRIORITY[".cbz"])
+        self.assertGreater(FORMAT_PRIORITY[".epub"], FORMAT_PRIORITY[".cbr"])
+        self.assertGreater(FORMAT_PRIORITY[".pdf"], FORMAT_PRIORITY[".cbz"])
+        self.assertGreater(FORMAT_PRIORITY[".pdf"], FORMAT_PRIORITY[".cbr"])
+
+    def test_onefile_filtering_with_comics(self):
+        """Test one-file filtering with comic book formats."""
+        # Create test files with comic formats
+        test_files = [
+            "/path/to/Fables - Vol 1.epub",
+            "/path/to/Fables - Vol 1.cbr",
+            "/path/to/Fables - Vol 1.cbz",
+            "/path/to/Watchmen - Chapter 1.cbr",
+            "/path/to/Watchmen - Chapter 1.cbz",
+        ]
+
+        filtered = filter_onefile_per_book(test_files)
+
+        # Should prefer EPUB over comics for Fables
+        fables_result = [f for f in filtered if "Fables" in f]
+        self.assertEqual(len(fables_result), 1)
+        self.assertTrue(fables_result[0].endswith(".epub"))
+
+        # Should prefer CBZ over CBR for Watchmen (no EPUB available)
+        watchmen_result = [f for f in filtered if "Watchmen" in f]
+        self.assertEqual(len(watchmen_result), 1)
+        self.assertTrue(watchmen_result[0].endswith(".cbz"))
+
+    # ...existing code...
 
 
 class TestEbookManagerCLI(unittest.TestCase):
@@ -498,9 +585,14 @@ class TestEbookManagerCLI(unittest.TestCase):
         ebook_manager.main()
 
         # Should print help information
-        print_calls = [call_obj.args[0] for call_obj in mock_print.call_args_list]
+        print_calls = [
+            call_obj.args[0] for call_obj in mock_print.call_args_list
+        ]
         self.assertTrue(
-            any("Ebook Collection Manager" in call_text for call_text in print_calls)
+            any(
+                "Ebook Collection Manager" in call_text
+                for call_text in print_calls
+            )
         )
         self.assertTrue(any("--ext" in call_text for call_text in print_calls))
 
@@ -558,9 +650,13 @@ class TestEbookManagerCLI(unittest.TestCase):
         ebook_manager.main()
 
         # Should print error message
-        print_calls = [call_obj.args[0] for call_obj in mock_print.call_args_list]
+        print_calls = [
+            call_obj.args[0] for call_obj in mock_print.call_args_list
+        ]
         self.assertTrue(
-            any("Directory not found" in call_text for call_text in print_calls)
+            any(
+                "Directory not found" in call_text for call_text in print_calls
+            )
         )
 
     @patch("argparse.ArgumentParser.parse_args")
@@ -579,11 +675,15 @@ class TestEbookManagerCLI(unittest.TestCase):
             ebook_manager.main()
 
         # Should call scan_collection with extensions and onefile=True
-        mock_scan.assert_called_once_with(self.test_dir, [".epub", ".pdf"], True)
+        mock_scan.assert_called_once_with(
+            self.test_dir, [".epub", ".pdf"], True
+        )
 
     @patch("argparse.ArgumentParser.parse_args")
     @patch("ebook_manager.__main__.import_collection")
-    def test_main_import_command_with_onefile(self, mock_import, mock_parse_args):
+    def test_main_import_command_with_onefile(
+        self, mock_import, mock_parse_args
+    ):
         """Test main function with import command and --onefile option."""
         # Mock command line arguments
         mock_args = MagicMock()
@@ -617,7 +717,9 @@ class TestEbookManagerCLI(unittest.TestCase):
             ebook_manager.main()
 
         # Should call batch_import_ebooks with both extensions and onefile=True
-        mock_batch_import.assert_called_once_with(self.test_dir, [".epub"], True)
+        mock_batch_import.assert_called_once_with(
+            self.test_dir, [".epub"], True
+        )
 
 
 class TestCalibreIntegration(unittest.TestCase):
@@ -765,11 +867,19 @@ class TestCalibreIntegration(unittest.TestCase):
     @patch("builtins.input")
     @patch("builtins.print")
     def test_scan_collection_calibre_success(
-        self, mock_print, mock_input, mock_import, mock_find_ebooks, mock_find_calibre
+        self,
+        mock_print,
+        mock_input,
+        mock_import,
+        mock_find_ebooks,
+        mock_find_calibre,
     ):
         """Test successful scan_collection_calibre."""
         mock_find_calibre.return_value = "/usr/bin/calibredb"
-        mock_find_ebooks.return_value = ["/path/to/book1.epub", "/path/to/book2.pdf"]
+        mock_find_ebooks.return_value = [
+            "/path/to/book1.epub",
+            "/path/to/book2.pdf",
+        ]
         mock_input.return_value = "y"
         mock_import.return_value = True
 
@@ -850,7 +960,9 @@ class TestCalibreIntegration(unittest.TestCase):
             result = import_ebook_to_calibre("/path/to/book.epub")
 
             self.assertTrue(result)
-            mock_import.assert_called_once_with("/path/to/book.epub", verbose=True)
+            mock_import.assert_called_once_with(
+                "/path/to/book.epub", verbose=True
+            )
 
     def test_import_ebook_to_calibre_failure(self):
         """Test failed import_ebook_to_calibre wrapper function."""
@@ -894,7 +1006,9 @@ class TestCalibreIntegration(unittest.TestCase):
     @patch("ebook_manager.core.find_calibredb")
     @patch("ebook_manager.core.subprocess.run")
     @patch("os.path.exists")
-    def test_update_calibre_book_path_success(self, mock_exists, mock_run, mock_find):
+    def test_update_calibre_book_path_success(
+        self, mock_exists, mock_run, mock_find
+    ):
         """Test successful update of Calibre book path."""
         mock_find.return_value = "/usr/bin/calibredb"
         mock_exists.return_value = True
@@ -919,7 +1033,9 @@ class TestCalibreIntegration(unittest.TestCase):
     ):
         """Test successful sync of Calibre database after file moves."""
         mock_find.return_value = "/usr/bin/calibredb"
-        mock_find_books.return_value = [{"id": "123", "path": "/old/path/book.epub"}]
+        mock_find_books.return_value = [
+            {"id": "123", "path": "/old/path/book.epub"}
+        ]
         mock_update.return_value = True
 
         old_paths = ["/old/path/book.epub"]
@@ -955,8 +1071,10 @@ class TestCalibreIntegration(unittest.TestCase):
 
     @patch("ebook_manager.core.find_calibredb")
     @patch("ebook_manager.core.subprocess.run")
-    def test_sync_calibre_with_beets_library_success(self, mock_run, mock_find):
-        """Test successful sync of Calibre with beets library using metadata matching."""
+    def test_sync_calibre_with_beets_library_success(
+        self, mock_run, mock_find
+    ):
+        """Test successful sync of Calibre with beets library using metadata."""
         mock_find.return_value = "/usr/bin/calibredb"
 
         # Mock beets library query with metadata format: path|artist|album|title
@@ -964,7 +1082,8 @@ class TestCalibreIntegration(unittest.TestCase):
         beets_result.returncode = 0
         beets_result.stdout = (
             "/path/to/book1.epub|Isaac Asimov|Foundation|Foundation\n"
-            "/path/to/book2.pdf|Douglas Adams|Hitchhiker's Guide|The Hitchhiker's Guide to the Galaxy"
+            "/path/to/book2.pdf|Douglas Adams|Hitchhiker's Guide|"
+            "The Hitchhiker's Guide to the Galaxy"
         )
 
         # Mock Calibre library query with JSON format
@@ -972,7 +1091,8 @@ class TestCalibreIntegration(unittest.TestCase):
         calibre_result.returncode = 0
         calibre_result.stdout = """[
             {"id": "1", "title": "Foundation", "authors": "Isaac Asimov"},
-            {"id": "2", "title": "The Hitchhiker's Guide to the Galaxy", "authors": "Douglas Adams"}
+            {"id": "2", "title": "The Hitchhiker's Guide to the Galaxy",
+             "authors": "Douglas Adams"}
         ]"""
 
         mock_run.side_effect = [beets_result, calibre_result]
@@ -998,7 +1118,9 @@ class TestCalibreIntegration(unittest.TestCase):
 
     @patch("ebook_manager.core.find_calibredb")
     @patch("ebook_manager.core.subprocess.run")
-    def test_sync_calibre_with_beets_library_missing_books(self, mock_run, mock_find):
+    def test_sync_calibre_with_beets_library_missing_books(
+        self, mock_run, mock_find
+    ):
         """Test sync when some books are missing from Calibre."""
         mock_find.return_value = "/usr/bin/calibredb"
 
@@ -1007,8 +1129,10 @@ class TestCalibreIntegration(unittest.TestCase):
         beets_result.returncode = 0
         beets_result.stdout = (
             "/path/to/book1.epub|Isaac Asimov|Foundation|Foundation\n"
-            "/path/to/book2.pdf|Douglas Adams|Hitchhiker's Guide|The Hitchhiker's Guide to the Galaxy\n"
-            "/path/to/book3.mobi|Philip K. Dick|Do Androids Dream|Do Androids Dream of Electric Sheep?"
+            "/path/to/book2.pdf|Douglas Adams|Hitchhiker's Guide|"
+            "The Hitchhiker's Guide to the Galaxy\n"
+            "/path/to/book3.mobi|Philip K. Dick|Do Androids Dream|"
+            "Do Androids Dream of Electric Sheep?"
         )
 
         # Mock Calibre library query - only 1 book (Foundation)
@@ -1024,13 +1148,17 @@ class TestCalibreIntegration(unittest.TestCase):
 
         # Check that missing books are correctly identified
         self.assertEqual(stats["scanned"], 3)
-        self.assertEqual(stats["updated"], 1)  # Only Foundation found in Calibre
+        self.assertEqual(
+            stats["updated"], 1
+        )  # Only Foundation found in Calibre
         self.assertEqual(stats["not_in_calibre"], 2)  # 2 books missing
         self.assertEqual(len(stats["missing_paths"]), 2)  # 2 missing paths
 
         # Check the specific missing paths
         expected_missing = ["/path/to/book2.pdf", "/path/to/book3.mobi"]
-        self.assertEqual(sorted(stats["missing_paths"]), sorted(expected_missing))
+        self.assertEqual(
+            sorted(stats["missing_paths"]), sorted(expected_missing)
+        )
 
         self.assertFalse("error" in stats)
 
@@ -1094,8 +1222,336 @@ class TestCalibreCommands(unittest.TestCase):
         with patch("os.path.isdir", return_value=True):
             ebook_manager.main()
 
-        mock_dual.assert_called_once_with(self.test_dir, [".epub", ".pdf"], False)
+        mock_dual.assert_called_once_with(
+            self.test_dir, [".epub", ".pdf"], False
+        )
 
+    # Tests for new Calibre database import and synchronization features
 
-if __name__ == "__main__":
-    unittest.main()
+    @patch("ebook_manager.core.find_calibredb")
+    def test_get_all_calibre_books_no_calibre(
+        self, mock_find_calibredb: MagicMock
+    ) -> None:
+        """Test get_all_calibre_books when Calibre is not found."""
+        mock_find_calibredb.return_value = None
+
+        result = get_all_calibre_books()
+
+        self.assertEqual(result, [])
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("subprocess.run")
+    def test_get_all_calibre_books_success(
+        self, mock_subprocess, mock_find_calibredb
+    ):
+        """Test successful retrieval of Calibre books."""
+        mock_find_calibredb.return_value = "calibredb"
+
+        # Mock the initial list command
+        mock_list_result = MagicMock()
+        mock_list_result.stdout = """[
+            {
+                "id": 1,
+                "title": "Test Book",
+                "authors": "Test Author",
+                "path": "Test Author/Test Book (1)",
+                "formats": ["EPUB", "PDF"],
+                "uuid": "test-uuid-123"
+            }
+        ]"""
+        mock_list_result.returncode = 0
+
+        # Mock the path lookup command
+        mock_path_result = MagicMock()
+        mock_path_result.stdout = (
+            "/path/to/library/Test Author/Test Book (1)/Test Book.epub\n"
+        )
+        mock_path_result.returncode = 0
+
+        mock_subprocess.side_effect = [mock_list_result, mock_path_result]
+
+        with patch("os.path.exists", return_value=True):
+            result = get_all_calibre_books()
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["title"], "Test Book")
+        self.assertEqual(result[0]["authors"], "Test Author")
+        self.assertIn("file_paths", result[0])
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("os.path.exists")
+    def test_import_calibre_database_to_beets_no_calibre(
+        self, mock_exists, mock_find_calibredb
+    ):
+        """Test import function when Calibre is not found."""
+        mock_find_calibredb.return_value = None
+        mock_exists.return_value = True  # beets exists
+
+        result = import_calibre_database_to_beets("fake_beets_exe")
+
+        self.assertIn("error", result)
+        self.assertEqual(result["error"], "Calibre not found")
+        self.assertEqual(result["imported"], 0)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("os.path.exists")
+    def test_import_calibre_database_to_beets_no_beets(
+        self, mock_exists, mock_find_calibredb
+    ):
+        """Test import function when beets is not found."""
+        mock_find_calibredb.return_value = "calibredb"
+        mock_exists.return_value = False  # beets doesn't exist
+
+        result = import_calibre_database_to_beets("fake_beets_exe")
+
+        self.assertIn("error", result)
+        self.assertEqual(result["error"], "Beets not found")
+        self.assertEqual(result["imported"], 0)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("os.path.exists")
+    @patch("ebook_manager.core.get_all_calibre_books")
+    def test_import_calibre_database_to_beets_no_books(
+        self, mock_get_books, mock_exists, mock_find_calibredb
+    ):
+        """Test import function when no Calibre books are found."""
+        mock_find_calibredb.return_value = "calibredb"
+        mock_exists.return_value = True
+        mock_get_books.return_value = []
+
+        result = import_calibre_database_to_beets("beets_exe")
+
+        self.assertIn("error", result)
+        self.assertEqual(result["error"], "No books found in Calibre database")
+        self.assertEqual(result["imported"], 0)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("os.path.exists")
+    @patch("ebook_manager.core.get_all_calibre_books")
+    @patch("subprocess.run")
+    def test_import_calibre_database_to_beets_dry_run(
+        self, mock_subprocess, mock_get_books, mock_exists, mock_find_calibredb
+    ):
+        """Test import function in dry run mode."""
+        mock_find_calibredb.return_value = "calibredb"
+        mock_exists.return_value = True
+
+        # Mock Calibre books
+        mock_books = [
+            {
+                "id": 1,
+                "title": "Test Book",
+                "authors": "Test Author",
+                "file_paths": ["/path/to/test/book.epub"],
+            }
+        ]
+        mock_get_books.return_value = mock_books
+
+        # Mock beets query for existing books
+        mock_beets_result = MagicMock()
+        mock_beets_result.stdout = ""  # No existing books
+        mock_beets_result.returncode = 0
+        mock_subprocess.return_value = mock_beets_result
+
+        result = import_calibre_database_to_beets("beets_exe", dry_run=True)
+
+        self.assertEqual(result["total_books"], 1)
+        self.assertEqual(result["imported"], 1)  # Would import in dry run
+        self.assertEqual(result["failed"], 0)
+
+    @patch("ebook_manager.core.find_calibredb")
+    @patch("ebook_manager.core.import_calibre_database_to_beets")
+    def test_reverse_calibre_sync_success(
+        self, mock_import, mock_find_calibredb
+    ):
+        """Test reverse sync function."""
+        mock_find_calibredb.return_value = "calibredb"
+        mock_import.return_value = {
+            "total_books": 5,
+            "imported": 3,
+            "skipped": 2,
+            "failed": 0,
+            "errors": [],
+        }
+
+        result = reverse_calibre_sync("beets_exe")
+
+        self.assertEqual(result["total_books"], 5)
+        self.assertEqual(result["imported"], 3)
+        self.assertEqual(result["skipped"], 2)
+        mock_import.assert_called_once()
+
+    @patch("ebook_manager.core.sync_calibre_with_beets_library")
+    @patch("ebook_manager.core.import_calibre_database_to_beets")
+    def test_bidirectional_calibre_sync(self, mock_import, mock_sync):
+        """Test bidirectional sync function."""
+        # Mock Calibre -> beets import
+        mock_import.return_value = {
+            "total_books": 5,
+            "imported": 2,
+            "skipped": 3,
+            "failed": 0,
+            "errors": [],
+        }
+
+        # Mock beets -> Calibre sync
+        mock_sync.return_value = {
+            "scanned": 10,
+            "updated": 3,
+            "failed": 0,
+            "not_in_calibre": 2,
+        }
+
+        result = bidirectional_calibre_sync("beets_exe", dry_run=False)
+
+        # Test that it returns a proper structure
+        self.assertIsInstance(result, dict)
+        mock_import.assert_called_once()
+        mock_sync.assert_called_once()
+
+    @patch("builtins.input")
+    @patch("builtins.print")
+    @patch("ebook_manager.core.import_calibre_database_to_beets")
+    def test_import_from_calibre_database_cli_success(
+        self, mock_import, mock_print, mock_input
+    ):
+        """Test CLI wrapper for Calibre database import."""
+        mock_input.return_value = "y"  # User says yes
+        mock_import.return_value = {
+            "total_books": 3,
+            "imported": 3,
+            "skipped": 0,
+            "failed": 0,
+            "errors": [],
+        }
+
+        import_from_calibre_database(dry_run=False)
+
+        mock_import.assert_called_once()
+        # Check that success message was printed
+        success_calls = [
+            call
+            for call in mock_print.call_args_list
+            if "SUCCESS!" in str(call)
+        ]
+        self.assertTrue(len(success_calls) > 0)
+
+    @patch("builtins.input")
+    @patch("builtins.print")
+    def test_import_from_calibre_database_cli_cancelled(
+        self, mock_print, mock_input
+    ):
+        """Test CLI wrapper when user cancels."""
+        mock_input.return_value = "n"  # User says no
+
+        import_from_calibre_database(dry_run=False)
+
+        # Check that cancelled message was printed
+        cancel_calls = [
+            call
+            for call in mock_print.call_args_list
+            if "cancelled" in str(call).lower()
+        ]
+        self.assertTrue(len(cancel_calls) > 0)
+
+    @patch("builtins.input")
+    @patch("builtins.print")
+    @patch("ebook_manager.core.bidirectional_calibre_sync")
+    def test_bidirectional_sync_workflow_cli(
+        self, mock_sync, mock_print, mock_input
+    ):
+        """Test CLI wrapper for bidirectional sync."""
+        mock_input.return_value = "y"  # User says yes
+        mock_sync.return_value = {
+            "total_calibre_books": 5,
+            "calibre_to_beets_imported": 2,
+            "beets_to_calibre_imported": 1,
+            "calibre_to_beets_skipped": 3,
+            "calibre_to_beets_failed": 0,
+            "beets_to_calibre_failed": 0,
+            "sync_successful": True,
+        }
+
+        bidirectional_sync_workflow(dry_run=False)
+
+        mock_sync.assert_called_once()
+        # Check that success message was printed
+        success_calls = [
+            call
+            for call in mock_print.call_args_list
+            if "COMPLETE!" in str(call)
+        ]
+        self.assertTrue(len(success_calls) > 0)
+
+    @patch("builtins.input")
+    @patch("builtins.print")
+    @patch("ebook_manager.core.reverse_calibre_sync")
+    def test_reverse_sync_workflow_cli(
+        self, mock_sync, mock_print, mock_input
+    ):
+        """Test CLI wrapper for reverse sync."""
+        mock_input.return_value = "y"  # User says yes
+        mock_sync.return_value = {
+            "total_books": 5,
+            "imported": 2,
+            "skipped": 3,
+            "failed": 0,
+            "errors": [],
+        }
+
+        reverse_sync_workflow()
+
+        mock_sync.assert_called_once()
+        # Check that success message was printed
+        success_calls = [
+            call
+            for call in mock_print.call_args_list
+            if "COMPLETE!" in str(call)
+        ]
+        self.assertTrue(len(success_calls) > 0)
+
+    @patch("argparse.ArgumentParser.parse_args")
+    @patch("ebook_manager.__main__.import_from_calibre_database")
+    def test_main_import_from_calibre_command(
+        self, mock_import, mock_parse_args
+    ):
+        """Test main function with import-from-calibre command."""
+        mock_args = MagicMock()
+        mock_args.command = "import-from-calibre"
+        mock_args.dry_run = True
+        mock_parse_args.return_value = mock_args
+
+        import ebook_manager
+
+        ebook_manager.main()
+
+        mock_import.assert_called_once_with(dry_run=True)
+
+    @patch("argparse.ArgumentParser.parse_args")
+    @patch("ebook_manager.__main__.bidirectional_sync_workflow")
+    def test_main_bidirectional_sync_command(self, mock_sync, mock_parse_args):
+        """Test main function with bidirectional-sync command."""
+        mock_args = MagicMock()
+        mock_args.command = "bidirectional-sync"
+        mock_args.dry_run = False
+        mock_parse_args.return_value = mock_args
+
+        import ebook_manager
+
+        ebook_manager.main()
+
+        mock_sync.assert_called_once_with(dry_run=False)
+
+    @patch("argparse.ArgumentParser.parse_args")
+    @patch("ebook_manager.__main__.reverse_sync_workflow")
+    def test_main_reverse_sync_command(self, mock_sync, mock_parse_args):
+        """Test main function with reverse-sync command."""
+        mock_args = MagicMock()
+        mock_args.command = "reverse-sync"
+        mock_parse_args.return_value = mock_args
+
+        import ebook_manager
+
+        ebook_manager.main()
+
+        mock_sync.assert_called_once()
